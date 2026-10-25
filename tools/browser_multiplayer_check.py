@@ -4,8 +4,10 @@ Checks: distinct clients, spawn, movement, firing, damage to the other player,
 death, respawn, disconnect without hanging the server, and reconnect. Aim and
 setviewpos are test fixtures; collision, hit detection and damage run in the
 real server. A failing check exits non-zero and must be reported as failing.
-Windows-only (reads the installed key from the registry; it is redacted from
-logs and never written to the result JSON).
+Windows-only (default: reads the installed key from the registry and redacts
+it from logs). Set COD2_TEST_NO_KEY=1 to test a clean browser with no CD-Key
+in its preferences against a project-owned LAN-mode server. No-key mode uses a
+fresh browser profile to avoid silently reusing credentials from prior runs.
 """
 import json
 import os
@@ -13,31 +15,46 @@ import sys
 from pathlib import Path
 import time
 import math
-import winreg
+import tempfile
 from playwright.sync_api import sync_playwright
+
+from contextlib import contextmanager
+
+@contextmanager
+def _existing_profile(root_dir):
+    """Preserve the previous persistent test profile for installed-key runs."""
+    yield str(root_dir / 'browser-profile')
 
 root = Path(os.environ.get('COD2_TEST_OUTPUT', str(Path(__file__).resolve().parent / '.runtime' / 'multiplayer'))).resolve()
 root.mkdir(parents=True, exist_ok=True)
 url = os.environ.get('COD2_TEST_URL', 'http://127.0.0.1:8081/cod2.html')
 server = os.environ.get('COD2_TEST_SERVER', '127.0.0.1:28961')
-with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r'SOFTWARE\WOW6432Node\Activision\Call of Duty 2') as registry:
-    key = winreg.QueryValueEx(registry, 'codkey')[0].replace('-', '').strip()
-if len(key) != 20:
-    raise RuntimeError('Unexpected local game key length')
+no_key = os.environ.get('COD2_TEST_NO_KEY', '').strip().lower() in ('1', 'true', 'yes')
+key = None
+if not no_key:
+    # Never read the installed CD-Key when explicitly testing project-owned
+    # servers with anonymous LAN-mode connections.
+    import winreg
+    with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r'SOFTWARE\WOW6432Node\Activision\Call of Duty 2') as registry:
+        key = winreg.QueryValueEx(registry, 'codkey')[0].replace('-', '').strip()
+    if len(key) != 20:
+        raise RuntimeError('Unexpected local game key length')
 log = (root / 'multiplayer-test.log').open('w', encoding='utf-8', buffering=1)
 def emit(kind, value):
     text = json.dumps(dict(time=time.time(), kind=kind, value=value), ensure_ascii=False)
-    log.write(text.replace(key, '[redacted]').replace(key[:16], '[redacted]') + '\n')
+    if key:
+        text = text.replace(key, '[redacted]').replace(key[:16], '[redacted]')
+    log.write(text + '\n')
 def state(page):
     return page.evaluate('JSON.parse(Module.ccall("Web_TestClientState", "string", [], []))')
 def command(page, text):
     page.evaluate('text => Module.ccall("Cbuf_AddText", null, ["string"], [text + "\\n"])', text)
 
-with sync_playwright() as p:
+with tempfile.TemporaryDirectory(prefix='cod2-no-key-profile-', dir=root) if no_key else _existing_profile(root) as profile_dir, sync_playwright() as p:
     # COD2_TEST_BROWSER: path to an installed Chrome/Chromium when Playwright's
     # own browser build is not downloaded (e.g. offline test machines).
     browser_exe = os.environ.get('COD2_TEST_BROWSER') or None
-    context = p.chromium.launch_persistent_context(str(root / 'browser-profile'), headless=True,
+    context = p.chromium.launch_persistent_context(str(profile_dir), headless=True,
         executable_path=browser_exe,
         args=['--enable-unsafe-swiftshader', '--autoplay-policy=no-user-gesture-required', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows'],
         viewport=dict(width=1280, height=800))
@@ -54,7 +71,7 @@ with sync_playwright() as p:
             page.evaluate('async () => { await Cod2Fs.ingestRemote({manifestUrl:"assets.json",baseUrl:"/"}); }')
             page.reload(wait_until='domcontentloaded')
         page.wait_for_function('!document.getElementById("beginBtn").disabled', timeout=60000)
-        page.evaluate('data => {const orig = Module.callMain; Module.callMain = function(args) {FS.mkdirTree("/cod2home/.cod2"); FS.writeFile("/cod2home/.cod2/preferences", "codkey="+data.key+"\\n"); return orig(args.concat(["+set","name",data.name,"+set","net_lanauthorize","0","+connect",data.server]));};}', dict(key=key, name='Browser' + str(index + 1), server=server))
+        page.evaluate('data => {const orig = Module.callMain; Module.callMain = function(args) {FS.mkdirTree("/cod2home/.cod2"); if (data.key) FS.writeFile("/cod2home/.cod2/preferences", "codkey="+data.key+"\\n"); return orig(args.concat(["+set","name",data.name,"+set","net_lanauthorize","0","+connect",data.server]));};}', dict(key=key, name='Browser' + str(index + 1), server=server))
         page.locator('#beginBtn').click()
         for attempt in range(50):
             page.wait_for_timeout(1000)
@@ -211,7 +228,7 @@ with sync_playwright() as p:
         'server_alive_after_reconnect': still_alive_after_reconnect,
     }
     emit('checks', checks)
-    (root / 'multiplayer-result.json').write_text(json.dumps(dict(checks=checks, movements=movement_results, fire=fire_results, duel=dict(before=duel_before, after=duel_after), lifecycle=lifecycle), indent=2))
+    (root / 'multiplayer-result.json').write_text(json.dumps(dict(key_mode='none' if no_key else 'installed-key', checks=checks, movements=movement_results, fire=fire_results, duel=dict(before=duel_before, after=duel_after), lifecycle=lifecycle), indent=2))
     print('Checks', checks, flush=True)
     for index, page in enumerate(pages):
         emit('final' + str(index), state(page))
