@@ -337,8 +337,10 @@ class Handler(BaseHTTPRequestHandler):
             self._send_bytes(502, body, "application/json")
             return
 
-        hop_drop = {"host", "content-length"}
-        req = ["GET %s HTTP/1.1" % dest_path, "Host: %s:%d" % (RELAY_HOST, port)]
+        hop_drop = {"host", "content-length", "x-forwarded-for"}
+        req = ["GET %s HTTP/1.1" % dest_path, "Host: %s:%d" % (RELAY_HOST, port),
+               # The relay limits sessions per browser address.
+               "X-Forwarded-For: %s" % self.client_address[0]]
         for key, val in self.headers.items():
             if key.lower() in hop_drop:
                 continue

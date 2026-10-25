@@ -68,6 +68,16 @@ ALLOWLIST_MISS_REFRESH = float(os.environ.get("COD2_RELAY_ALLOWLIST_MISS_REFRESH
 MAX_DGRAM = 16384
 UDP_RECV_TIMEOUT = 0.05
 
+# Server->browser datagrams wait in one bounded queue per session; when a slow
+# browser lets it fill up, the oldest datagrams are dropped (UDP semantics)
+# instead of growing memory without limit.
+SEND_QUEUE = int(os.environ.get("COD2_RELAY_SEND_QUEUE", "256"))
+# Browser->server packets per second per session (CoD2 cl_maxpackets <= 100;
+# connection setup bursts are covered by the bucket size).
+UP_PPS = float(os.environ.get("COD2_RELAY_UP_PPS", "250"))
+# Concurrent sessions per client address (0 = unlimited).
+MAX_PER_IP = int(os.environ.get("COD2_RELAY_MAX_PER_IP", "4"))
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("cod2-relay")
 
@@ -190,6 +200,94 @@ def check_ticket(params: dict, host: str, port: int):
     return payload
 
 
+class DropOldestQueue:
+    """Bounded FIFO for asyncio: put() never blocks; when full the oldest
+    item is discarded. Counts drops for logging."""
+
+    def __init__(self, maxsize: int) -> None:
+        self._q: asyncio.Queue = asyncio.Queue(maxsize=max(1, maxsize))
+        self.dropped = 0
+
+    def put(self, item) -> None:
+        if self._q.full():
+            try:
+                self._q.get_nowait()
+                self.dropped += 1
+            except asyncio.QueueEmpty:
+                pass
+        self._q.put_nowait(item)
+
+    async def get(self):
+        return await self._q.get()
+
+    def qsize(self) -> int:
+        return self._q.qsize()
+
+
+class TokenBucket:
+    def __init__(self, rate: float, burst: float, clock=time.monotonic) -> None:
+        self.rate = rate
+        self.burst = burst
+        self.tokens = burst
+        self._clock = clock
+        self._last = clock()
+
+    def allow(self) -> bool:
+        if self.rate <= 0:
+            return True
+        now = self._clock()
+        self.tokens = min(self.burst, self.tokens + (now - self._last) * self.rate)
+        self._last = now
+        if self.tokens >= 1.0:
+            self.tokens -= 1.0
+            return True
+        return False
+
+
+class ConnLimiter:
+    def __init__(self, per_ip: int) -> None:
+        self.per_ip = per_ip
+        self._lock = threading.Lock()
+        self._active: dict[str, int] = {}
+
+    def acquire(self, ip: str) -> bool:
+        with self._lock:
+            n = self._active.get(ip, 0)
+            if self.per_ip > 0 and n >= self.per_ip:
+                return False
+            self._active[ip] = n + 1
+            return True
+
+    def release(self, ip: str) -> None:
+        with self._lock:
+            n = self._active.get(ip, 0) - 1
+            if n <= 0:
+                self._active.pop(ip, None)
+            else:
+                self._active[ip] = n
+
+
+_conns = ConnLimiter(MAX_PER_IP)
+
+
+def client_ip(ws, headers) -> str:
+    """The browser's address. X-Forwarded-For is trusted only from a loopback
+    peer (nginx / serve_web_local in front of the relay)."""
+    peer = ""
+    try:
+        peer = ws.remote_address[0]
+    except Exception:  # noqa: BLE001
+        pass
+    if peer in ("127.0.0.1", "::1", "") and headers is not None:
+        try:
+            fwd = headers.get("X-Forwarded-For") or ""
+        except Exception:  # noqa: BLE001
+            fwd = ""
+        if fwd:
+            return fwd.split(",")[0].strip()
+    return peer or "?"
+
+
 def parse_target(path: str, headers) -> tuple[str, int]:
     """Extract host= and port= from the WS request URI query string.
 
@@ -228,12 +326,19 @@ async def relay_handler(ws):
         return
 
     target = (host, port)
-    log.info("session open → %s:%d from %s", host, port,
-             ws.remote_address if hasattr(ws, 'remote_address') else "?")
+    ip = client_ip(ws, headers)
+    if not _conns.acquire(ip):
+        log.warning("refused %s: more than %d sessions from this address", ip, MAX_PER_IP)
+        await ws.close(4429, "too many sessions from this address")
+        return
+    log.info("session open → %s:%d from %s", host, port, ip)
 
     loop = asyncio.get_running_loop()
     udp_transport = None
     udp_protocol = None
+    outbox = DropOldestQueue(SEND_QUEUE)
+    upstream = TokenBucket(UP_PPS, max(UP_PPS, 1.0))
+    up_dropped = 0
 
     class UdpRelay(asyncio.DatagramProtocol):
         def connection_made(self, transport):
@@ -243,14 +348,22 @@ async def relay_handler(ws):
             if addr[0] != target[0] or addr[1] != target[1]:
                 log.debug("udp rx from %s dropped: does not match %s", addr, target)
                 return
-            try:
-                asyncio.ensure_future(ws.send(data))
-            except Exception as exc:
-                log.warning("udp->ws forward failed: %s", exc)
+            outbox.put(data)
 
         def error_received(self, exc):
             log.warning("udp error: %s", exc)
 
+    async def pump() -> None:
+        """Single writer per session: preserves order, no task per packet."""
+        try:
+            while True:
+                await ws.send(await outbox.get())
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - closed socket ends the pump
+            log.debug("udp->ws pump ended: %s", exc)
+
+    sender = None
     try:
         # AF_INET and an explicit local_addr: with family=0 asyncio cannot pick
         # a family and every session died with "unexpected address family"; with
@@ -259,6 +372,7 @@ async def relay_handler(ws):
         # parse_target only accepts IPv4, so the family is known.
         udp_transport, udp_protocol = await loop.create_datagram_endpoint(
             UdpRelay, local_addr=("0.0.0.0", 0), family=socket.AF_INET)
+        sender = asyncio.ensure_future(pump())
 
         async for message in ws:
             if not isinstance(message, (bytes, bytearray)):
@@ -268,6 +382,9 @@ async def relay_handler(ws):
                 log.warning("oversized ws frame %d from %s", len(message),
                             ws.remote_address if hasattr(ws, 'remote_address') else "?")
                 continue
+            if not upstream.allow():
+                up_dropped += 1
+                continue
             udp_transport.sendto(message, target)
 
     except websockets.exceptions.ConnectionClosed:
@@ -275,9 +392,13 @@ async def relay_handler(ws):
     except Exception as exc:
         log.error("session error: %s", exc)
     finally:
+        if sender:
+            sender.cancel()
         if udp_transport:
             udp_transport.close()
-        log.info("session closed → %s:%d", host, port)
+        _conns.release(ip)
+        log.info("session closed → %s:%d (dropped down=%d up=%d)", host, port,
+                 outbox.dropped, up_dropped)
 
 
 async def main():

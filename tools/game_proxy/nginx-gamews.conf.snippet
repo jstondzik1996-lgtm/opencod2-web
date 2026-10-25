@@ -11,6 +11,8 @@ location /play/api/gamews {
     proxy_set_header Connection "upgrade";
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
+    # The relay limits sessions per browser address (trusted from loopback only).
+    proxy_set_header X-Forwarded-For $remote_addr;
     proxy_connect_timeout 5s;
     proxy_read_timeout 300s;
     proxy_send_timeout 300s;

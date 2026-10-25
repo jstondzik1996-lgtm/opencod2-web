@@ -35,6 +35,12 @@ Model: project dedicated servers run in the original game's LAN mode (`net_lanau
 - Tests: `tools/test_sessions.py` (tokens, forgery/expiry, nick cleaning, bans, routes, relay admission), `tools/test_lobby_browser.py` (Chromium: nick required, session + ticket flow, full-server retry with a new ticket).
 - Pending on the real stack: verify that a browser with NO key in preferences joins a LAN-mode project server through the relay (expected from the code paths in `cl_main_mp.c`/`sv_client_mp.c`), and that the in-game name equals the lobby nick.
 
+## Server fleet and relay limits (P1/P3, Claude 2026-10-25)
+
+- Several instances: `python tools/run_server_fleet.py --exe <cod2_win32_ded.exe> --root <clean server root> --config browser-test.cfg --count 2 --base-port 28961 --max-players 4 --servers-out tools/master_proxy/servers.local.json`, then `serve_web_local.py ... --servers tools/master_proxy/servers.local.json --sessions`. Instances bind to 127.0.0.1 in LAN mode; never expose their UDP ports publicly.
+- Relay limits: `COD2_RELAY_SEND_QUEUE` (256), `COD2_RELAY_UP_PPS` (250), `COD2_RELAY_MAX_PER_IP` (4). Session close logs dropped packet counts, useful in load tests.
+- Load test plan (pending, needs real clients): 4 -> 8 -> 16 -> 32 players on one instance; record server CPU, relay CPU, bandwidth, the relay's dropped counts, snapshot gaps (`Web_TestClientState.snapshotTime`) and client FPS. Do not claim 32 players before this passes.
+
 ## Current blocker and next experiment (history)
 
 Player bullets hit world entity 1022 and did not damage the second player. Claude (2026-10-25, commit after 774cd3a) analysed and applied the paired fix:

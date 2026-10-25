@@ -63,4 +63,11 @@ Upstream baseline: `c301dd6e8550c59a3fdd3081c73dc4ffd2c8602c`.
 - Results: 29 Python tests OK locally. CI run for 07f4215: WASM build, Chromium lobby, Python and i386 harness jobs passed (MinGW job pending at the time of writing).
 - Next: P1 multi-instance helper and concurrency tests; P3 performance review.
 
+## 2026-10-25 — Claude: P1 server fleet, P3 relay hardening
+
+- `tools/run_server_fleet.py`: starts N dedicated-server instances from one game root on consecutive ports (own fs_homepath each, LAN mode, loopback/private bind enforced), writes the directory JSON for the master proxy, restarts crashed instances with backoff.
+- Relay (P3): one bounded drop-oldest queue and one writer task per session instead of a task per datagram (no unbounded memory with a slow browser), upstream packet-rate limit (`COD2_RELAY_UP_PPS`, default 250/s), per-address session limit (`COD2_RELAY_MAX_PER_IP`, default 4; X-Forwarded-For trusted only from a loopback peer; serve_web_local and the nginx snippet now send it).
+- Tests: `tools/test_server_fleet.py` (fake dedicated server process: directory file, both instances online, crash -> restart -> online, argument guards; 20 parallel HTTP Quick Play requests never exceed 7 free slots), `tools/test_relay_session.py` (real relay_handler with fake WebSocket + UDP echo: order, slow-browser drops, rate limit, per-IP limit, header trust). 41 Python tests OK.
+- CI: MinGW i686 server job FAILED on run 40227512003 (compile step). Full log is not reachable from the cloud session (blob storage blocked), so the step now emits the first error lines as annotations. Investigating next; may be a toolchain difference (Ubuntu MinGW GCC 13 vs w64devkit GCC 16 used locally).
+
 See `HANDOFF.md` for exact endpoints, build steps, limitations and next work. This checkpoint does not establish working combat.
