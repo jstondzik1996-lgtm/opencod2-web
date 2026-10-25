@@ -333,6 +333,17 @@
     state.current = t;
     stopRefresh();
     var args = [];
+    /*
+     * The project's own directory contains dedicated LAN-mode servers
+     * accessible through our admission-controlled relay. Tell the original
+     * client about that LAN connection *before* issuing +connect. Without
+     * this flag CL_CheckForResend invokes CL_RequestAuthorization, and a
+     * fresh browser with no game key fails with EXE_ERR_INVALID_CD_KEY.
+     *
+     * This only applies to destinations admitted by our project directory,
+     * not to arbitrary external/stock CoD2 servers.
+     */
+    args.push('+set', 'net_lanauthorize', '0');
     var nick = currentNick();
     if (nick) args.push('+set', 'name', nick);
     args.push('+connect', t.connect);
