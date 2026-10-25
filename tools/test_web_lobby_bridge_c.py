@@ -33,11 +33,11 @@ static int check_rejected(const char *s) {
 
 int main(void) {
     if (!Web_LobbyConnect("127.0.0.1:28963")) return 1;
-    if (strcmp(commands, "set net_lanauthorize 0\\nconnect 127.0.0.1:28963\\n")) {
-        fprintf(stderr, "unexpected lobby command: %s\\n", commands);
+    if (strcmp(commands, "set net_lanauthorize 0\nconnect 127.0.0.1:28963\n")) {
+        fprintf(stderr, "unexpected lobby command: %s\n", commands);
         return 2;
     }
-    if (!check_rejected("127.0.0.1:28963\\nquit")) return 3;
+    if (!check_rejected("127.0.0.1:28963\nquit")) return 3;
     if (!check_rejected("127.0.0.1:0")) return 4;
     if (!check_rejected("127.0.0.1:65536")) return 5;
     if (!check_rejected("127.0.0.1:28963;quit")) return 6;
