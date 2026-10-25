@@ -19,6 +19,15 @@ set "BRANCH=codex/browser-mp-checkpoint"
 set "REMOTE_URL=https://github.com/jstondzik1996-lgtm/opencod2-web.git"
 set "PYTHON=%USERPROFILE%\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe"
 set "PYTHONPATH=%WORK%python-tools;%PYTHONPATH%"
+rem Gameplay builds default to optimized runtime, not expensive heap instrumentation.
+rem To diagnose memory bugs instead: set COD2_QA_MEMCHECK=1 before running.
+if /I "%COD2_QA_MEMCHECK%"=="1" (
+  set "COD2_QA_SAFE_HEAP=ON"
+  set "COD2_QA_SUFFIX=memcheck"
+) else (
+  set "COD2_QA_SAFE_HEAP=OFF"
+  set "COD2_QA_SUFFIX=play"
+)
 set "COD2_RELAY_ALLOW_ANY="
 rem The QA UDP port is selected dynamically before service startup.
 
@@ -115,11 +124,11 @@ if defined USE_WORKTREE (
 echo [CoD2 QA] Build source: "%SOURCE%"
 rem Use a separate build folder per revision. Older QA servers may still be
 rem serving previous builds; never overwrite assets they are actively serving.
-set "QAWEB=%WORK%qa-build-web-%QA_SHA:~0,10%"
+set "QAWEB=%WORK%qa-build-web-%QA_SHA:~0,10%-%COD2_QA_SUFFIX%"
 set "QANATIVE=%WORK%qa-build-win32-%QA_SHA:~0,10%"
 
 echo.
-echo [2/5] Loading existing emsdk and compiler...
+echo [2/5] Loading existing emsdk and compiler...\necho [CoD2 QA] Browser build: %COD2_QA_SUFFIX% / SAFE_HEAP=%COD2_QA_SAFE_HEAP%
 set "PATH=%WORK%w64devkit\bin;%PATH%"
 call "%WORK%emsdk\emsdk_env.bat" >nul
 if errorlevel 1 goto :fail
@@ -132,7 +141,7 @@ if errorlevel 1 (echo ERROR: Emscripten emcmake not available. & goto :fail)
 
 echo.
 echo [3/5] Building separate QA WebAssembly and dedicated server...
-call emcmake cmake -S "%SOURCE%" -B "%QAWEB%" -G Ninja -DCMAKE_OBJECT_PATH_MAX=200 -DCOD2_WEB_SAFE_HEAP=ON -DCOD2_WEB_TESTING=ON
+call emcmake cmake -S "%SOURCE%" -B "%QAWEB%" -G Ninja -DCMAKE_OBJECT_PATH_MAX=200 -DCOD2_WEB_SAFE_HEAP=%COD2_QA_SAFE_HEAP% -DCOD2_WEB_TESTING=ON
 if errorlevel 1 goto :fail
 cmake --build "%QAWEB%" -j 6
 if errorlevel 1 goto :fail
