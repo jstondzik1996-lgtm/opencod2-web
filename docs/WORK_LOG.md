@@ -1,5 +1,13 @@
 # Work log
 
+## 2026-10-25 — ChatGPT: fix Windows QA script after second real user screenshot
+
+- User re-ran the QA BAT and MinGit download successfully completed (git version 2.56.0.windows.3), so first problem was resolved. New screenshot explicitly shows ERROR: CMake is missing, followed by merge: origin/codex/browser-mp-checkpoint - not something we can merge; that merge error does not prove branch divergence, it means the named ref wasn't available.
+- Fixed the EXISTING shared-repo BAT in commit 093d82a: it bootstraps portable CMake v4.4.4 (54.4 MB) and Ninja v1.13.2, with SHA-256 verification against GitHub release metadata, and reuses the MinGit already downloaded. Does not install system-wide or require admin.
+- Git workflow now fetches the exact shared-branch head directly from jstondzik1996-lgtm/opencod2-web.git, uses FETCH_HEAD's validated SHA instead of relying on origin/<branch> tracking refs, fast-forwards the original checkout ONLY if clean and ancestor, and otherwise creates/updates a separate QA worktree of the SAME existing Git repository (not a clone or new product). Preserves both uncommitted and divergent local Work/Claude work. Never resets/force pushes.
+- Scripts build under work/qa-build-web and work/qa-build-win32; QA ports remain HTTP 8082 / master 20723 / relay 20724 / UDP 28963. Previous 8080/8081 preview stays untouched.
+- The BAT was verified by static inspection but has not been run on the user's Windows system after this fix; if it fails, request the FIRST error line/screenshot instead of assuming that builds and gameplay work.
+
 ## 2026-10-25 — ChatGPT: Windows QA runner Git/PATH fix from user screenshot
 
 - User executed `work/RUN_UPDATED_LOCAL_TEST.bat` in PowerShell. Actual output showed **`ERROR: git.exe missing`**, then a misleading empty current branch check. No build/gameplay update took place.
