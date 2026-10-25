@@ -1,19 +1,22 @@
 @echo off
 setlocal EnableExtensions
-title CoD2 Browser MP - isolated update and test
-rem Download this BAT into the EXISTING work folder, beside opencod2-web/.
-rem Uses the same GitHub project; it never clones, deletes, resets or force-pushes.
-rem Builds in separate QA directories; leaves existing 8080/8081 previews alone.
+title CoD2 Browser MP - verified isolated local test
+rem ONE existing Git repository, no cloning, no reset, no force push.
+rem Never stop existing previews 8080/8081. This QA build uses HTTP 8082.
+rem Place this BAT directly in the existing "work" folder.
 
 set "WORK=%~dp0"
-set "REPO=%WORK%opencod2-web"
+set "BASE_REPO=%WORK%opencod2-web"
+set "QA_SOURCE=%WORK%qa-source-worktree"
+set "SOURCE=%BASE_REPO%"
+set "QAWEB=%WORK%qa-build-web"
+set "QANATIVE=%WORK%qa-build-win32"
 set "SERVERROOT=%WORK%native-server"
-set "ASSETS=%WORK%mp-assets\main"
-set "QAWEB=%REPO%\build\qa-web"
-set "QANATIVE=%REPO%\build-win32-qa"
 set "QAHOME=%WORK%native-server-qa"
+set "ASSETS=%WORK%mp-assets\main"
 set "SERVERS=%WORK%cod2-qa-servers.json"
 set "BRANCH=codex/browser-mp-checkpoint"
+set "REMOTE_URL=https://github.com/jstondzik1996-lgtm/opencod2-web.git"
 set "PYTHON=%USERPROFILE%\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe"
 set "PYTHONPATH=%WORK%python-tools;%PYTHONPATH%"
 set "COD2_RELAY_ALLOW_ANY="
@@ -21,202 +24,209 @@ set "COD2_PORT_MIN=28963"
 set "COD2_PORT_MAX=28963"
 
 echo.
-echo  [CoD2 QA] Existing project: "%REPO%"
-echo  [CoD2 QA] Separate ports: HTTP 8082 / UDP 28963
-echo  [CoD2 QA] Existing preview ports will not be stopped.
+echo [CoD2 QA] Existing project: "%BASE_REPO%"
+echo [CoD2 QA] QA ports HTTP 8082 / UDP 28963; old 8080/8081 untouched.
+echo [CoD2 QA] Downloads only verified, portable developer tools.
 echo.
 
-if not exist "%REPO%\.git" (
-  echo ERROR: "%REPO%" does not exist. No files changed.
-  goto :fail
-)
-if not exist "%SERVERROOT%\main" (
-  echo ERROR: Original clean server root is missing: "%SERVERROOT%\main"
-  goto :fail
-)
-if not exist "%ASSETS%" (
-  echo ERROR: Existing browser asset pack is missing: "%ASSETS%"
+if not exist "%BASE_REPO%\.git" (
+  echo ERROR: Existing Git repository not found at "%BASE_REPO%".
   goto :fail
 )
 if not exist "%WORK%emsdk\emsdk_env.bat" (
-  echo ERROR: Existing Emscripten SDK not found in work\emsdk.
+  echo ERROR: The already configured work\emsdk is missing.
+  goto :fail
+)
+if not exist "%WORK%w64devkit\bin\gcc.exe" (
+  echo ERROR: The existing portable w64devkit compiler is missing.
+  goto :fail
+)
+if not exist "%SERVERROOT%\main" (
+  echo ERROR: Dedicated server root is missing: "%SERVERROOT%\main".
+  goto :fail
+)
+if not exist "%ASSETS%" (
+  echo ERROR: Existing browser assets are missing: "%ASSETS%".
   goto :fail
 )
 if not exist "%PYTHON%" set "PYTHON=python"
-rem Check Git first. The original BAT's where/git || (...) condition carried on
-rem after the error; never treat "missing git" as a branch error again.
+
 call :ensure_git
 if errorlevel 1 goto :fail
-
-rem CMake and Ninja may also be installed outside the current PowerShell PATH.
-call :ensure_build_tools
+call :ensure_cmake
 if errorlevel 1 goto :fail
-if not exist "%WORK%w64devkit\bin\gcc.exe" (
-  echo ERROR: Existing w64devkit compiler is missing.
+call :ensure_ninja
+if errorlevel 1 goto :fail
+
+echo.
+echo [1/5] Fetching the actual project branch (no tracking-ref assumptions)...
+git -C "%BASE_REPO%" fetch --no-tags "%REMOTE_URL%" "refs/heads/%BRANCH%"
+if errorlevel 1 (
+  echo ERROR: Could not fetch shared branch. Existing files were not reset.
   goto :fail
 )
+set "QA_SHA="
+for /f "delims=" %%H in ('git -C "%BASE_REPO%" rev-parse --verify FETCH_HEAD') do set "QA_SHA=%%H"
+if not defined QA_SHA (
+  echo ERROR: Git returned no fetched commit.
+  goto :fail
+)
+echo [CoD2 QA] Remote revision: %QA_SHA%
 
-rem Refuse to clobber local unfinished edits or switch an unexpected branch.
+rem Preserve all local Work/Claude changes. Fast-forward the existing branch
+rem only when it is clean AND the new commit descends from local HEAD.
 set "DIRTY="
-for /f "delims=" %%x in ('git -C "%REPO%" status --porcelain --untracked-files=no') do set "DIRTY=1"
-if defined DIRTY (
-  echo ERROR: Local tracked changes exist. Commit/stash them manually first.
-  echo No fetch/build attempted.
-  goto :fail
-)
 set "CURRENT="
-for /f "delims=" %%x in ('git -C "%REPO%" branch --show-current') do set "CURRENT=%%x"
+for /f "delims=" %%I in ('git -C "%BASE_REPO%" status --porcelain --untracked-files=no') do set "DIRTY=1"
+for /f "delims=" %%I in ('git -C "%BASE_REPO%" branch --show-current') do set "CURRENT=%%I"
 
-echo [1/5] Updating existing repo without overwriting local work...
-rem Fetch only changes metadata and downloaded objects, not local tracked files.
-git -C "%REPO%" fetch origin "%BRANCH%"
-if errorlevel 1 goto :fail
-if /I not "%CURRENT%"=="%BRANCH%" (
-  echo [CoD2 QA] Switching existing checkout from "%CURRENT%" to "%BRANCH%"...
-  git -C "%REPO%" switch "%BRANCH%"
-  if errorlevel 1 (
-    echo ERROR: Could not safely switch existing checkout. No reset was run.
-    goto :fail
+set "USE_WORKTREE=1"
+if not defined DIRTY if /I "%CURRENT%"=="%BRANCH%" (
+  git -C "%BASE_REPO%" merge-base --is-ancestor HEAD "%QA_SHA%" >nul 2>nul
+  if not errorlevel 1 (
+    git -C "%BASE_REPO%" merge --ff-only "%QA_SHA%"
+    if errorlevel 1 goto :fail
+    set "USE_WORKTREE="
+    set "SOURCE=%BASE_REPO%"
   )
 )
-git -C "%REPO%" merge --ff-only "origin/%BRANCH%"
-if errorlevel 1 (
-  echo ERROR: Branch has diverged; refusing to overwrite local commits.
-  goto :fail
-)
 
-echo [2/5] Preparing existing SDK...
+if defined USE_WORKTREE (
+  echo [CoD2 QA] Existing checkout has local work or diverged history.
+  echo [CoD2 QA] Keeping it UNCHANGED. Preparing another WORKTREE of the same repository.
+  if exist "%QA_SOURCE%\.git" (
+    set "QA_DIRTY="
+    for /f "delims=" %%I in ('git -C "%QA_SOURCE%" status --porcelain --untracked-files=no') do set "QA_DIRTY=1"
+    if defined QA_DIRTY (
+      echo ERROR: QA worktree has unsaved changes; refusing to overwrite them.
+      goto :fail
+    )
+    git -C "%QA_SOURCE%" checkout --detach "%QA_SHA%"
+    if errorlevel 1 goto :fail
+  ) else (
+    if exist "%QA_SOURCE%" (
+      echo ERROR: QA folder exists but is not a worktree. Will not overwrite it.
+      goto :fail
+    )
+    git -C "%BASE_REPO%" worktree add --detach "%QA_SOURCE%" "%QA_SHA%"
+    if errorlevel 1 goto :fail
+  )
+  set "SOURCE=%QA_SOURCE%"
+)
+echo [CoD2 QA] Build source: "%SOURCE%"
+
+echo.
+echo [2/5] Loading existing emsdk and compiler...
 set "PATH=%WORK%w64devkit\bin;%PATH%"
 call "%WORK%emsdk\emsdk_env.bat" >nul
 if errorlevel 1 goto :fail
 where cmake >nul 2>nul
-if errorlevel 1 (
-  echo ERROR: cmake.exe is not installed or available on PATH.
-  goto :fail
-)
+if errorlevel 1 (echo ERROR: CMake was lost after emsdk setup. & goto :fail)
 where ninja >nul 2>nul
-if errorlevel 1 (
-  echo ERROR: ninja.exe missing; check w64devkit / portable SDK.
-  goto :fail
-)
+if errorlevel 1 (echo ERROR: Ninja was lost after emsdk setup. & goto :fail)
+where emcmake >nul 2>nul
+if errorlevel 1 (echo ERROR: Emscripten emcmake not available. & goto :fail)
 
-echo [3/5] Building separate WASM and Win32 QA targets...
-pushd "%REPO%"
-call emcmake cmake -S . -B build/qa-web -G Ninja -DCMAKE_OBJECT_PATH_MAX=200 -DCOD2_WEB_SAFE_HEAP=ON -DCOD2_WEB_TESTING=ON
-if errorlevel 1 (popd & goto :fail)
-cmake --build build/qa-web -j 6
-if errorlevel 1 (popd & goto :fail)
-cmake -S . -B build-win32-qa -G Ninja -DCMAKE_SYSTEM_NAME=Windows -DCMAKE_C_COMPILER=gcc -DCMAKE_ASM_COMPILER=gcc -DCMAKE_RC_COMPILER=windres
-if errorlevel 1 (popd & goto :fail)
-cmake --build build-win32-qa -j 6
-if errorlevel 1 (popd & goto :fail)
-popd
+echo.
+echo [3/5] Building separate QA WebAssembly and dedicated server...
+call emcmake cmake -S "%SOURCE%" -B "%QAWEB%" -G Ninja -DCMAKE_OBJECT_PATH_MAX=200 -DCOD2_WEB_SAFE_HEAP=ON -DCOD2_WEB_TESTING=ON
+if errorlevel 1 goto :fail
+cmake --build "%QAWEB%" -j 6
+if errorlevel 1 goto :fail
+cmake -S "%SOURCE%" -B "%QANATIVE%" -G Ninja -DCMAKE_SYSTEM_NAME=Windows -DCMAKE_C_COMPILER=gcc -DCMAKE_ASM_COMPILER=gcc -DCMAKE_RC_COMPILER=windres
+if errorlevel 1 goto :fail
+cmake --build "%QANATIVE%" -j 6
+if errorlevel 1 goto :fail
 
-if not exist "%QAWEB%\cod2.html" (echo ERROR: HTML build missing & goto :fail)
-if not exist "%QAWEB%\cod2.wasm" (echo ERROR: WASM build missing & goto :fail)
-if not exist "%QANATIVE%\cod2_win32_ded.exe" (echo ERROR: Server executable missing & goto :fail)
+if not exist "%QAWEB%\cod2.html" (echo ERROR: Missing cod2.html. & goto :fail)
+if not exist "%QAWEB%\cod2.wasm" (echo ERROR: Missing cod2.wasm. & goto :fail)
+if not exist "%QANATIVE%\cod2_win32_ded.exe" (echo ERROR: Missing Win32 dedicated exe. & goto :fail)
 
-echo [4/5] Linking EXISTING game assets without copying them...
+echo.
+echo [4/5] Linking your existing local game assets...
 if not exist "%QAWEB%\main\" (
   mklink /J "%QAWEB%\main" "%ASSETS%"
   if errorlevel 1 goto :fail
 )
-if exist "%REPO%\build\web\assets.json" (
-  copy /Y "%REPO%\build\web\assets.json" "%QAWEB%\assets.json" >nul
+if exist "%BASE_REPO%\build\web\assets.json" copy /Y "%BASE_REPO%\build\web\assets.json" "%QAWEB%\assets.json" >nul
+if exist "%BASE_REPO%\build\web\zone" if not exist "%QAWEB%\zone" (
+  mklink /J "%QAWEB%\zone" "%BASE_REPO%\build\web\zone"
 )
-if not exist "%QAWEB%\assets.json" (
-  echo WARNING: No assets.json manifest. Web page may require selecting local files.
-)
-if exist "%REPO%\build\web\zone" if not exist "%QAWEB%\zone" (
-  mklink /J "%QAWEB%\zone" "%REPO%\build\web\zone"
-  if errorlevel 1 echo WARNING: Could not link optional zone assets.
-)
+if not exist "%QAWEB%\assets.json" echo WARNING: assets.json is missing; file picker may be required on the new port.
 if not exist "%QAHOME%\main" mkdir "%QAHOME%\main"
+> "%SERVERS%" echo {"servers":[{"id":"qa-local","name":"CoD2 QA Local","region":"local","host":"127.0.0.1","port":28963,"mode":"dm","maxPlayers":4}]}
 
-rem Create a one-server QA directory (no public master list).
-> "%SERVERS%" echo {"servers":[{"id":"qa-local","name":"CoD2 QA - Local","region":"local","host":"127.0.0.1","port":28963,"mode":"dm","maxPlayers":4}]}
-
-echo [5/5] Starting ISOLATED server and web launcher...
-rem Do not replace, terminate or update old preview executables.
+echo.
+echo [5/5] Starting isolated QA services on NEW ports only...
 start "CoD2 QA Server 28963" /D "%SERVERROOT%" "%QANATIVE%\cod2_win32_ded.exe" +set dedicated 1 +set net_ip 127.0.0.1 +set net_port 28963 +set net_lanauthorize 0 +set fs_basepath "%SERVERROOT%" +set fs_homepath "%QAHOME%" +exec browser-test.cfg
 timeout /t 3 /nobreak >nul
-start "CoD2 QA HTTP 8082" /D "%REPO%" "%PYTHON%" "%REPO%\tools\serve_web_local.py" --port 8082 --master-port 20723 --relay-port 20724 --root "%QAWEB%" --servers "%SERVERS%" --sessions
+start "CoD2 QA HTTP 8082" /D "%SOURCE%" "%PYTHON%" "%SOURCE%\tools\serve_web_local.py" --port 8082 --master-port 20723 --relay-port 20724 --root "%QAWEB%" --servers "%SERVERS%" --sessions
 timeout /t 3 /nobreak >nul
 start "" "http://127.0.0.1:8082/cod2.html"
 echo.
-echo Open: http://127.0.0.1:8082/cod2.html
-echo Your OLD preview (8081) was left untouched.
-echo QA is for manual verification only; successful build != correct gameplay.
-echo.
+echo [CoD2 QA] QA URL: http://127.0.0.1:8082/cod2.html
+echo [CoD2 QA] Old preview on port 8081 was NOT touched.
+echo [CoD2 QA] A successful build alone does not prove correct gameplay.
 pause
 exit /b 0
 
 :fail
 echo.
-echo UPDATE / BUILD FAILED. Existing previews were not intentionally stopped.
-echo Check the error above, do NOT delete the work folder or game assets.
+echo [CoD2 QA] ERROR. The existing preview was not intentionally stopped.
+echo Please capture the FIRST error displayed above; keep your game assets.
 pause
 exit /b 1
 
-rem --------------------------------------------------------------------------
-rem Git bootstrap: do not require admin rights or a machine-wide installation.
-rem The fallback is the official Git for Windows MinGit v2.56.0(3) x64 archive,
-rem with its published SHA256 checked before unpacking. (~40 MB download)
-rem --------------------------------------------------------------------------
 :ensure_git
 where git >nul 2>nul
-if not errorlevel 1 (
-  git --version
-  exit /b 0
-)
+if not errorlevel 1 exit /b 0
 if exist "%ProgramFiles%\Git\cmd\git.exe" set "PATH=%ProgramFiles%\Git\cmd;%PATH%"
 if exist "%LOCALAPPDATA%\Programs\Git\cmd\git.exe" set "PATH=%LOCALAPPDATA%\Programs\Git\cmd;%PATH%"
-if exist "%WORK%emsdk\git\cmd\git.exe" set "PATH=%WORK%emsdk\git\cmd;%PATH%"
-if exist "%WORK%emsdk\git\bin\git.exe" set "PATH=%WORK%emsdk\git\bin;%PATH%"
+if exist "%WORK%portable-git\cmd\git.exe" set "PATH=%WORK%portable-git\cmd;%PATH%"
 where git >nul 2>nul
-if not errorlevel 1 (
-  git --version
-  exit /b 0
-)
+if not errorlevel 1 (git --version & exit /b 0)
+echo [CoD2 QA] Downloading official verified portable Git...
 set "COD2_MINGIT_DIR=%WORK%portable-git"
-if not exist "%COD2_MINGIT_DIR%\cmd\git.exe" (
-  echo [CoD2 QA] Git not found on this PC. Downloading verified portable Git...
-  powershell -NoProfile -NonInteractive -Command "$ErrorActionPreference='Stop'; $dir=$env:COD2_MINGIT_DIR; $archive=Join-Path $env:TEMP 'cod2-mingit-2.56.0.3-x64.zip'; $url='https://github.com/git-for-windows/git/releases/download/v2.56.0.windows.3/MinGit-2.56.0.3-64-bit.zip'; $sha='2e5619966e588fde5f8122c5557cad50c0fbafcaed736689f40ec1dfb1d78ea7'; if (!(Test-Path -LiteralPath $archive) -or (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ne $sha) { Invoke-WebRequest -Uri $url -UseBasicParsing -OutFile $archive }; if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ne $sha) { throw 'Portable Git SHA256 check failed' }; New-Item -ItemType Directory -Path $dir -Force | Out-Null; Expand-Archive -LiteralPath $archive -DestinationPath $dir -Force; if (!(Test-Path -LiteralPath (Join-Path $dir 'cmd\git.exe'))) { throw 'Portable Git extraction failed' }"
-  if errorlevel 1 (
-    echo ERROR: Portable Git download or verification failed. Do not run unknown installers.
-    exit /b 1
-  )
-)
+powershell -NoProfile -NonInteractive -Command "$ErrorActionPreference='Stop'; $dir=$env:COD2_MINGIT_DIR; $zip=Join-Path $env:TEMP 'cod2-Mingit-2.56.0.3.zip'; $url='https://github.com/git-for-windows/git/releases/download/v2.56.0.windows.3/MinGit-2.56.0.3-64-bit.zip'; $hash='2e5619966e588fde5f8122c5557cad50c0fbafcaed736689f40ec1dfb1d78ea7'; if (!(Test-Path $zip) -or (Get-FileHash $zip -Algorithm SHA256).Hash -ne $hash) { Invoke-WebRequest -Uri $url -UseBasicParsing -OutFile $zip }; if ((Get-FileHash $zip -Algorithm SHA256).Hash -ne $hash) { throw 'MinGit checksum mismatch' }; New-Item -ItemType Directory -Path $dir -Force | Out-Null; Expand-Archive -Path $zip -DestinationPath $dir -Force; if (!(Test-Path (Join-Path $dir 'cmd\git.exe'))) { throw 'git.exe absent after extraction' }"
+if errorlevel 1 exit /b 1
 set "PATH=%COD2_MINGIT_DIR%\cmd;%PATH%"
 where git >nul 2>nul
-if errorlevel 1 (
-  echo ERROR: git.exe still missing after portable extraction.
-  exit /b 1
-)
+if errorlevel 1 exit /b 1
 git --version
 exit /b 0
 
-:ensure_build_tools
-rem A normal CMake install is enough; do not download toolchains as a side effect.
+:ensure_cmake
 where cmake >nul 2>nul
-if errorlevel 1 (
-  if exist "%ProgramFiles%\CMake\bin\cmake.exe" set "PATH=%ProgramFiles%\CMake\bin;%PATH%"
-  if exist "%LOCALAPPDATA%\Programs\CMake\bin\cmake.exe" set "PATH=%LOCALAPPDATA%\Programs\CMake\bin;%PATH%"
-  if exist "%WORK%cmake\bin\cmake.exe" set "PATH=%WORK%cmake\bin;%PATH%"
-)
+if not errorlevel 1 exit /b 0
+set "COD2_CMAKE_BIN=%WORK%portable-cmake\cmake-4.4.4-windows-x86_64\bin"
+if exist "%ProgramFiles%\CMake\bin\cmake.exe" set "PATH=%ProgramFiles%\CMake\bin;%PATH%"
+if exist "%WORK%cmake\bin\cmake.exe" set "PATH=%WORK%cmake\bin;%PATH%"
+if exist "%COD2_CMAKE_BIN%\cmake.exe" set "PATH=%COD2_CMAKE_BIN%;%PATH%"
 where cmake >nul 2>nul
-if errorlevel 1 (
-  echo ERROR: CMake is missing. Install CMake or add its bin folder to PATH.
-  exit /b 1
-)
+if not errorlevel 1 (cmake --version & exit /b 0)
+echo [CoD2 QA] Downloading verified portable CMake v4.4.4 (54 MB)...
+set "COD2_CMAKE_DIR=%WORK%portable-cmake"
+powershell -NoProfile -NonInteractive -Command "$ErrorActionPreference='Stop'; $dir=$env:COD2_CMAKE_DIR; $zip=Join-Path $env:TEMP 'cod2-cmake-4.4.4-x64.zip'; $url='https://github.com/Kitware/CMake/releases/download/v4.4.4/cmake-4.4.4-windows-x86_64.zip'; $hash='bace36e94b31c68ab6fa295f26dfa11219e0701cf7c94b0284a7d1cb13dac536'; if (!(Test-Path $zip) -or (Get-FileHash $zip -Algorithm SHA256).Hash -ne $hash) { Invoke-WebRequest -Uri $url -UseBasicParsing -OutFile $zip }; if ((Get-FileHash $zip -Algorithm SHA256).Hash -ne $hash) { throw 'CMake checksum mismatch' }; New-Item -ItemType Directory -Path $dir -Force | Out-Null; Expand-Archive -Path $zip -DestinationPath $dir -Force; if (!(Test-Path (Join-Path $dir 'cmake-4.4.4-windows-x86_64\bin\cmake.exe'))) { throw 'cmake.exe absent after extraction' }"
+if errorlevel 1 exit /b 1
+set "PATH=%COD2_CMAKE_BIN%;%PATH%"
+where cmake >nul 2>nul
+if errorlevel 1 exit /b 1
+cmake --version
+exit /b 0
+
+:ensure_ninja
 where ninja >nul 2>nul
-if errorlevel 1 (
-  if exist "%WORK%w64devkit\bin\ninja.exe" set "PATH=%WORK%w64devkit\bin;%PATH%"
-  if exist "%WORK%ninja\ninja.exe" set "PATH=%WORK%ninja;%PATH%"
-)
+if not errorlevel 1 exit /b 0
+set "COD2_NINJA_DIR=%WORK%portable-ninja"
+if exist "%WORK%w64devkit\bin\ninja.exe" set "PATH=%WORK%w64devkit\bin;%PATH%"
+if exist "%COD2_NINJA_DIR%\ninja.exe" set "PATH=%COD2_NINJA_DIR%;%PATH%"
 where ninja >nul 2>nul
-if errorlevel 1 (
-  echo ERROR: Ninja is missing from the existing portable SDK.
-  exit /b 1
-)
+if not errorlevel 1 (ninja --version & exit /b 0)
+echo [CoD2 QA] Downloading verified portable Ninja v1.13.2...
+powershell -NoProfile -NonInteractive -Command "$ErrorActionPreference='Stop'; $dir=$env:COD2_NINJA_DIR; $zip=Join-Path $env:TEMP 'cod2-ninja-1.13.2-win.zip'; $url='https://github.com/ninja-build/ninja/releases/download/v1.13.2/ninja-win.zip'; $hash='07fc8261b42b20e71d1720b39068c2e14ffcee6396b76fb7a795fb460b78dc65'; if (!(Test-Path $zip) -or (Get-FileHash $zip -Algorithm SHA256).Hash -ne $hash) { Invoke-WebRequest -Uri $url -UseBasicParsing -OutFile $zip }; if ((Get-FileHash $zip -Algorithm SHA256).Hash -ne $hash) { throw 'Ninja checksum mismatch' }; New-Item -ItemType Directory -Path $dir -Force | Out-Null; Expand-Archive -Path $zip -DestinationPath $dir -Force; if (!(Test-Path (Join-Path $dir 'ninja.exe'))) { throw 'ninja.exe absent after extraction' }"
+if errorlevel 1 exit /b 1
+set "PATH=%COD2_NINJA_DIR%;%PATH%"
+where ninja >nul 2>nul
+if errorlevel 1 exit /b 1
+ninja --version
 exit /b 0
