@@ -290,8 +290,20 @@ void CG_Player(centity_t *cent)
     iClientNum = es->clientNum;
 
     obj = Com_GetClientDObj(es->number, cent->localClientNum);
-    if (!obj)
+    if (!obj) {
+        /*
+         * Missing remote-player DObj silently discarded the whole player.
+         * Report the first few failures so the Windows test can distinguish
+         * missing network entities from a failed model/animation setup.
+         */
+        static unsigned int missingDObjReports;
+        if (missingDObjReports < 16) {
+            ++missingDObjReports;
+            Com_Printf("[cg-player] missing DObj entity=%d client=%d local=%d (remote player will be invisible)\n",
+                       es->number, es->clientNum, cent->localClientNum);
+        }
         return;
+    }
 
     memset(body, 0, 0x74);
     (*(unsigned char *)&((centity_t *)body)->currentState.time2) = 0xFF;
