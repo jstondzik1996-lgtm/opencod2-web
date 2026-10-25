@@ -165,6 +165,26 @@ class DirectoryTests(unittest.TestCase):
         self.assertEqual(d.list_servers()[0]['status'], 'offline')
         self.assertIsNone(d.matchmake())
 
+    def test_stale_directory_is_not_advertised_if_poller_stalls(self):
+        # Simulate the background polling thread not running: list, master and
+        # Quick Play must all reject an expired heartbeat without poll_once().
+        a = self.fake(players=1)
+        d = self.make([entry('a', a.port)], stale_after=10)
+        self.assertEqual(d.list_servers()[0]['status'], 'online')
+        self.assertEqual(len(d.masterlist()['servers']), 1)
+
+        self.clock.now += 11
+        stale = d.list_servers()[0]
+        self.assertEqual(stale['status'], 'offline')
+        self.assertEqual(stale['free'], 0)
+        self.assertEqual(d.masterlist()['servers'], [])
+        self.assertIsNone(d.matchmake(), 'Quick Play must not allocate a stale server')
+
+        # A fresh getstatus response on the next sweep restores availability.
+        d.poll_once()
+        self.assertEqual(d.list_servers()[0]['status'], 'online')
+        self.assertIsNotNone(d.matchmake())
+
     def test_quick_play_fills_then_overflows(self):
         a = self.fake(players=2, maxclients=4)
         b = self.fake(players=0, maxclients=4)
