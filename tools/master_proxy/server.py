@@ -13,9 +13,21 @@ VPS→server round trip with connectionless UDP `getinfo` sweeps and injects it 
 through this host anyway, which makes VPS→server the meaningful half of the
 latency to display.
 
+Project server directory (preferred): set COD2_SERVERS_FILE to a JSON list
+of the project's own dedicated servers (see servers.example.json). Then
+  GET  /masterlist/cod2/1.3   only our online servers (engine Join Game list,
+                              and the relay allowlist)
+  GET  /servers               our servers with status, players, free slots
+  POST /matchmake             Quick Play: {"mode","region","exclude":[ids]}
+  POST /matchmake/release     {"reservation": token}
+The public api.cod.pm list is then only served at /external/masterlist/...
+and only when COD2_EXTERNAL_MASTER=1; it is labelled external.
+
+Without COD2_SERVERS_FILE the proxy keeps the old behaviour (public list).
+
 Usage:
   python3 tools/master_proxy/server.py
-  # or: PORT=20711 python3 server.py
+  # or: PORT=20711 COD2_SERVERS_FILE=servers.json python3 server.py
 """
 
 from __future__ import annotations
@@ -31,6 +43,11 @@ import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+try:
+    from directory import ConfigError, ServerDirectory, load_config
+except ImportError:  # imported as tools.master_proxy.server
+    from .directory import ConfigError, ServerDirectory, load_config
+
 UPSTREAM = os.environ.get("COD2_MASTER_UPSTREAM", "https://api.cod.pm").rstrip("/")
 PORT = int(os.environ.get("PORT", "20711"))
 CACHE_TTL = float(os.environ.get("COD2_MASTER_CACHE_TTL", "30"))
@@ -44,6 +61,41 @@ PING_UNREACHABLE = 999
 PING_MAX_AGE = float(os.environ.get("COD2_PING_MAX_AGE", "20"))
 
 _PATH_RE = re.compile(r"^/(masterlist|pings)/(cod2|cod|coduo|cod4)(?:/(1\.\d))?/?$")
+_EXTERNAL_RE = re.compile(r"^/external/masterlist/(cod2)(?:/(1\.\d))?/?$")
+
+SERVERS_FILE = os.environ.get("COD2_SERVERS_FILE", "").strip()
+EXTERNAL_MASTER = os.environ.get("COD2_EXTERNAL_MASTER", "") not in ("", "0", "no")
+MATCHMAKE_PER_MINUTE = int(os.environ.get("COD2_MATCHMAKE_PER_MINUTE", "30"))
+MAX_BODY = 4096
+
+# Set in main() (or by tests) when COD2_SERVERS_FILE is configured.
+DIRECTORY: ServerDirectory | None = None
+
+
+class RateLimiter:
+    """Fixed one-minute window per client address."""
+
+    def __init__(self, per_minute: int) -> None:
+        self.per_minute = per_minute
+        self._lock = threading.Lock()
+        self._hits: dict[str, tuple[int, int]] = {}
+
+    def allow(self, key: str) -> bool:
+        window = int(time.time() // 60)
+        with self._lock:
+            if len(self._hits) > 10000:
+                self._hits.clear()
+            win, count = self._hits.get(key, (window, 0))
+            if win != window:
+                win, count = window, 0
+            if count >= self.per_minute:
+                self._hits[key] = (win, count)
+                return False
+            self._hits[key] = (win, count + 1)
+            return True
+
+
+_matchmake_limit = RateLimiter(MATCHMAKE_PER_MINUTE)
 
 _cache_lock = threading.Lock()
 _cache: dict[str, tuple[float, bytes, str]] = {}
@@ -236,7 +288,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_OPTIONS(self) -> None:
         self.send_response(204)
         self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.send_header("Content-Length", "0")
         self.end_headers()
@@ -244,10 +296,51 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         path = self.path.split("?", 1)[0]
         if path in ("/", "/health"):
-            body = json.dumps({"ok": 1, "service": "cod2-master-proxy",
-                               "ping": _pinger.stats()}).encode("utf-8")
+            info = {"ok": 1, "service": "cod2-master-proxy", "ping": _pinger.stats(),
+                    "directory": None}
+            if DIRECTORY is not None:
+                listed = DIRECTORY.list_servers(include_private=True)
+                info["directory"] = {
+                    "servers": len(listed),
+                    "online": sum(1 for x in listed if x["status"] == "online"),
+                    "sweeps": DIRECTORY.sweeps,
+                }
+            body = json.dumps(info).encode("utf-8")
             self._send(200, body, "application/json")
             return
+
+        if DIRECTORY is not None:
+            if path in ("/servers", "/servers/"):
+                body = json.dumps({"servers": DIRECTORY.list_servers(),
+                                   "source": "project"},
+                                  separators=(",", ":")).encode("utf-8")
+                self._send(200, body, "application/json")
+                return
+            if _PATH_RE.match(path):
+                if _PATH_RE.match(path).group(1) == "pings":
+                    pings = {s["connect"]: s["ping_ms"] for s in DIRECTORY.list_servers()
+                             if s["status"] == "online"}
+                    body = json.dumps({"pings": pings}, separators=(",", ":"))
+                else:
+                    body = json.dumps(DIRECTORY.masterlist(), separators=(",", ":"))
+                self._send(200, body.encode("utf-8"), "application/json")
+                return
+            m = _EXTERNAL_RE.match(path)
+            if m:
+                if not EXTERNAL_MASTER:
+                    self._send(404, b'{"error":1,"description":"external master disabled"}\n',
+                               "application/json")
+                    return
+                try:
+                    body, ctype = _fetch_upstream(m.group(1), m.group(2) or "1.3")
+                    data = json.loads(body)
+                    data["source"] = "external"
+                    data["note"] = "public servers; their own authorization rules apply"
+                    self._send(200, json.dumps(data).encode("utf-8"), ctype)
+                except Exception as exc:  # noqa: BLE001
+                    err = json.dumps({"error": 1, "description": str(exc)}).encode("utf-8")
+                    self._send(502, err, "application/json")
+                return
 
         m = _PATH_RE.match(path)
         if not m:
@@ -274,10 +367,82 @@ class Handler(BaseHTTPRequestHandler):
             self._send(502, err, "application/json")
 
 
+    def _read_json(self):
+        try:
+            length = int(self.headers.get("Content-Length") or "0")
+        except ValueError:
+            length = -1
+        if length < 0 or length > MAX_BODY:
+            return None
+        raw = self.rfile.read(length) if length else b"{}"
+        try:
+            data = json.loads(raw.decode("utf-8") or "{}")
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return None
+        return data if isinstance(data, dict) else None
+
+    def do_POST(self) -> None:
+        path = self.path.split("?", 1)[0].rstrip("/")
+        if DIRECTORY is None:
+            self._send(404, b'{"error":1,"description":"no project server directory configured"}\n',
+                       "application/json")
+            return
+        data = self._read_json()
+        if data is None:
+            self.close_connection = True
+            self._send(400, b'{"error":1,"description":"invalid JSON body"}\n', "application/json")
+            return
+        if path == "/matchmake":
+            client = (self.headers.get("X-Forwarded-For") or self.client_address[0]).split(",")[0].strip()
+            if not _matchmake_limit.allow(client):
+                self._send(429, b'{"error":"rate_limited","retryAfter":60}\n', "application/json")
+                return
+            exclude = data.get("exclude") or []
+            if not isinstance(exclude, list):
+                exclude = []
+            pick = DIRECTORY.matchmake(mode=str(data.get("mode") or "")[:16],
+                                       region=str(data.get("region") or "")[:16],
+                                       exclude=[str(x)[:32] for x in exclude[:16]])
+            if pick is None:
+                listed = DIRECTORY.list_servers()
+                online = sum(1 for x in listed if x["status"] == "online")
+                body = {"error": "no_free_server" if online else "no_server_online",
+                        "online": online, "retryAfter": 10}
+                self._send(503, json.dumps(body).encode("utf-8"), "application/json")
+                return
+            self._send(200, json.dumps(pick).encode("utf-8"), "application/json")
+            return
+        if path == "/matchmake/release":
+            ok = DIRECTORY.release(str(data.get("reservation") or ""))
+            self._send(200, json.dumps({"released": ok}).encode("utf-8"), "application/json")
+            return
+        self._send(404, b'{"error":1,"description":"invalid route"}\n', "application/json")
+
+
+def setup_directory(path: str) -> ServerDirectory:
+    entries = load_config(path)
+    return ServerDirectory(
+        entries,
+        poll_interval=float(os.environ.get("COD2_DIRECTORY_POLL", "2.0")),
+        stale_after=float(os.environ.get("COD2_DIRECTORY_STALE", "10")),
+        reservation_ttl=float(os.environ.get("COD2_RESERVATION_TTL", "30")),
+    )
+
+
 def main() -> None:
+    global DIRECTORY
+    if SERVERS_FILE:
+        try:
+            DIRECTORY = setup_directory(SERVERS_FILE)
+        except (OSError, ValueError, ConfigError) as exc:
+            raise SystemExit("cannot load COD2_SERVERS_FILE %s: %s" % (SERVERS_FILE, exc))
+        DIRECTORY.start()
+        print("project directory: %d servers from %s" % (len(DIRECTORY.list_servers(True)), SERVERS_FILE),
+              flush=True)
     threading.Thread(target=_pinger.run_forever, name="pinger", daemon=True).start()
     server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
-    print(f"cod2 master proxy on http://127.0.0.1:{PORT}/  upstream={UPSTREAM}"
+    print(f"cod2 master proxy on http://127.0.0.1:{PORT}/  "
+          f"list={'project directory' if DIRECTORY else 'public ' + UPSTREAM}"
           f"  ping every {PING_INTERVAL}s", flush=True)
     server.serve_forever()
 

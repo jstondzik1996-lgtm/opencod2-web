@@ -1,6 +1,6 @@
 # CoD2 browser multiplayer handoff
 
-Updated: 2026-10-25 (Claude: entity-list + temp box fix, integration pending). This is an unfinished port, not a finished multiplayer release.
+Updated: 2026-10-25 (Claude: collision fix + project server directory, lobby and Quick Play; combat integration still pending). This is an unfinished port, not a finished multiplayer release.
 
 ## Goal and boundaries
 
@@ -14,6 +14,7 @@ Run the original Call of Duty 2 1.3 multiplayer client inside a browser, without
 - Two independent browser pages connect to the reconstructed local dedicated server, have distinct client numbers, join opposing teams, spawn with health 100, receive advancing snapshots, move, and consume ammunition when firing.
 - The controlled damage test FAILS: target health remains 100. Do not claim playable combat or a completed port. See `docs/evidence/two-client-partial.json` for the earlier successful movement/firing run and failed damage assertion.
 - A previous disconnect VM crash, wrong snapshot client indexing, missing WASM data pointers, and persistent HTTP HEAD/GET bug have been repaired. Python regression tests pass.
+- Project server directory, `/play/api/servers`, Quick Play matchmaking with slot reservations, relay allowlist from the directory and the launcher lobby are implemented and tested in the cloud against fake UDP servers and a stubbed engine (see "Own servers and lobby"). Not yet tested with the real dedicated server or real WASM client.
 - Not verified: all maps, stock-server interoperability, Internet play, performance on other hardware, campaign, full round lifecycle. Headless rendering ran around 10–12 FPS in a diagnostic build; actual GPU renderer was not measured.
 
 ## Current blocker and next experiment
@@ -31,17 +32,38 @@ NOT yet verified: Windows/MinGW build, Emscripten build, and the real two-client
 
 1. `git pull` this branch in `work/opencod2-web`. Rebuild `build-win32` (server) and `build/web` (client) exactly as in "Build and test" below.
 2. Copy the new `cod2_win32_ded.exe` into a SEPARATE test server root (not the 8080 preview server). Start it on 28961 with `g_debugBullets 6`, web service on 8081/20721/20722 (env vars below). Leave 8080/20711/20712/28960 running untouched.
-3. Run `tools/browser_multiplayer_check.py` with `COD2_TEST_URL=http://127.0.0.1:8081/cod2.html`, `COD2_TEST_SERVER=127.0.0.1:28961`, separate `COD2_TEST_OUTPUT`.
+3. Run `tools/browser_multiplayer_check.py` with `COD2_TEST_URL=http://127.0.0.1:8081/cod2.html`, `COD2_TEST_SERVER=127.0.0.1:28961`, separate `COD2_TEST_OUTPUT`. The harness now also checks `target_died`, `target_respawned` (fires on the victim page to respawn in DM), `server_alive_after_disconnect` (shooter snapshots advance for 6 s after the victim disconnects), `reconnected` and `server_alive_after_reconnect`. Raw samples are in `lifecycle` in the result JSON.
 4. Expected log: `bullet candidate: entity=<other client>` followed by `bullet trace: ... hit=<client number>` (not 1022). Target health must drop below 100.
-5. Then verify manually / by script: kill -> death, respawn, disconnect of one client while the other keeps receiving advancing snapshots, reconnect. Server must not hang (watch CPU and `serverTime`).
+5. If the respawn check fails only because the game type needs a different respawn input, record the observed `lifecycle.respawn` samples and adjust the harness, not the server. Server must not hang (watch CPU and `serverTime`).
 6. If the server hangs or crashes: capture the server log tail and the last `bullet` lines into `docs/evidence/`, revert only on the test server, and report in WORK_LOG. Do not update the 8080 preview until steps 3–5 pass.
 7. Save the sanitized result JSON as `docs/evidence/two-client-damage.json` (no CD key, no profile paths), update this file and WORK_LOG, commit and push.
 
 `sv_world_mp.c` allocates four rows for the affine transform used by MatrixTransposeTransformVector43 and supplies entity origin; this fixed a real out-of-bounds read but did not alone restore hits. Optional `g_debugBullets 6` logging records ray/candidate evidence. Remove the noisy instrumentation once damage is proven.
 
-## Product direction requested by the user (2026-10-25)
+## Product direction (user, 2026-10-25) — see docs/ROADMAP.md
 
-The user wants the browser build to join a game immediately or pick from a list of OUR servers (the project's own dedicated servers via `tools/master_proxy` / relay), not the old stock servers. Scope that is fine to build: own master list + server picker in the browser UI, auto-connect, our dedicated servers configured for this project's clients. Boundaries that stay: no publishing of game assets, keys or profiles; players still load their own legally obtained game files. Do not implement cracking/key generation or a hosted copy of the game for people who do not own it. Discuss key-auth handling on our own servers with the user before implementing it.
+Working name: **WWII Browser Multiplayer**. Two tracks share one code base: (A) the port compatible with original CoD2 1.3, running on game files each player supplies locally; (B) a standalone public version with original or properly licensed maps, weapons, models, sounds, UI and branding. Never publish original IWD/models/sounds/textures, keys or Steam files. Identity on our servers must be our own (P2); no keygens, shared keys or bypassing other servers' authorization. The launcher shows the unofficial-project notice; it is attribution, not permission.
+
+## Own servers and lobby (P1, Claude 2026-10-25)
+
+Implemented:
+- `tools/master_proxy/directory.py`: project server list from `COD2_SERVERS_FILE` (example: `tools/master_proxy/servers.example.json`), UDP `getstatus` polling every 2 s (map, game type, players, `sv_maxclients`, ping), offline after 10 s without answer, Quick Play choosing the busiest server with a free slot (then lowest ping), 30 s slot reservations so concurrent joins do not overbook, release endpoint.
+- `tools/master_proxy/server.py` with a directory: `GET /servers`, `POST /matchmake {mode, region, exclude}`, `POST /matchmake/release`, and `/masterlist/cod2/1.3` returns ONLY our online servers (so the in-game Join Game list and the relay allowlist follow the directory). Public api.cod.pm list only at `/external/masterlist/...` with `COD2_EXTERNAL_MASTER=1`, labelled external. Matchmake rate limit 30/min per client. Without `COD2_SERVERS_FILE` the old public-list behaviour is unchanged (keeps the 8080 preview working).
+- `tools/serve_web_local.py`: forwards POST, `--servers FILE`, serves `lobby.js`/`brand-mark.png` from `src/web` (no relink needed for lobby edits), and points the spawned relay at its own master port (test relay on 20722 no longer reads the 20711 preview list).
+- `tools/game_proxy/relay.py`: allowlist refetch on a miss (at most every 5 s) so a server that came online after the last refresh works; an empty project list is accepted (no fallback to forwarding anywhere).
+- `src/web/lobby.js` + shell: "Nasze serwery" panel with Quick Play and per-server Join. The choice is passed as `+connect ip:port` at engine boot. On `EXE_SERVERISFULL` Quick Play excludes that server and reconnects through the new export `Web_LobbyConnect` (`src/web/web_lobby.c`, accepts only `a.b.c.d:port`). The lobby hides itself when no project directory is configured.
+- Branding: title "WWII Browser Multiplayer", new neutral helmet icon (old star-"2" icons removed), unofficial-project notice in the launcher.
+
+Tests (cloud): `tools/test_server_directory.py` (fake UDP servers: parsing, offline/stale, fill-then-overflow, reservations, 12 concurrent matchmakes never exceed capacity, filters, HTTP routes, rate limit, POST through serve_web_local, relay allowlist), `tools/test_lobby_browser.py` (headless Chromium with the real shell/lobby/cod2_fs.js and a stubbed engine: list, Quick Play -> `+connect` to the fuller server, full-server retry -> other server, reservation released). The engine stub means this proves the launcher path only.
+
+### Instructions for Work: P1 on the real stack (after P0)
+
+1. Start two test dedicated servers from separate clean roots: ports 28961 and 28962, `sv_maxclients 2`, same config otherwise.
+2. Create `tools/master_proxy/servers.local.json` (not committed) from the example with ports 28961/28962 and `maxPlayers` 2.
+3. Rebuild the web client (shell + `web_lobby.c` changed). Start `python tools/serve_web_local.py --port 8081 --master-port 20721 --relay-port 20722 --servers tools/master_proxy/servers.local.json` WITHOUT `COD2_RELAY_ALLOW_ANY` (the relay must now accept only directory servers).
+4. Check `http://127.0.0.1:8081/play/api/servers` shows both online. Open three browser profiles, press "Szybka gra" in each: expected A, A, then B. Kill server B: within ~10 s it shows offline and Quick Play no longer offers it. Confirm the relay refuses a non-directory port.
+5. Also confirm the in-game Join Game menu lists only the two project servers.
+6. Save the sanitized results to `docs/evidence/` and record them in WORK_LOG.
 
 ## Local Windows state (machine-specific, not portable paths)
 
@@ -74,7 +96,9 @@ Native server (working directory is its clean game root):
 cod2_win32_ded.exe +set dedicated 1 +set net_ip 127.0.0.1 +set net_port 28961 +set fs_basepath . +set fs_homepath . +exec browser-test.cfg
 ```
 
-Local web service: `python tools/serve_web_local.py --port 8081 --master-port 20721 --relay-port 20722`. Set `COD2_RELAY_ALLOW_ANY=1`, `COD2_PORT_MIN=28961`, `COD2_PORT_MAX=28961` for the isolated local relay.
+Local web service: `python tools/serve_web_local.py --port 8081 --master-port 20721 --relay-port 20722`. Set `COD2_RELAY_ALLOW_ANY=1`, `COD2_PORT_MIN=28961`, `COD2_PORT_MAX=28961` for the isolated local relay. With `--servers FILE` use the project directory instead and do NOT set `COD2_RELAY_ALLOW_ANY` (never set it on a public host). Do not set `COD2_REMOTE_ASSETS` to original IWDs on any public host.
+
+Cloud-runnable tests (no assets): `python -m unittest discover -s tools -p 'test_*.py'` (the lobby browser test skips without Playwright Chromium) and `tests/cm_world_link/run.sh` (clang + GNU ld, i386).
 
 Integration harness: `tools/browser_multiplayer_check.py` requires Playwright Chromium, the test-export build, local assets, and the devmap server. Environment variables `COD2_TEST_URL`, `COD2_TEST_SERVER`, and `COD2_TEST_OUTPUT` select isolated endpoints/profile/results. It creates two real clients and sends normal game commands; aim and teleport are fixtures, while collision and damage run in the real server. A failing assertion must remain reported as failing.
 

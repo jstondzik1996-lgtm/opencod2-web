@@ -8,7 +8,7 @@
   <meta property="og:title" content="Call of Duty 2 — Web" />
   <meta property="og:description" content="Call of Duty 2 in the browser — WebGL client." />
   <meta content="#1a1c14" name="theme-color" />
-  <title>Call of Duty 2 — Web</title>
+  <title>WWII Browser Multiplayer</title>
   <link rel="icon" type="image/png" sizes="32x32" href="favicon.png">
   <link rel="apple-touch-icon" href="apple-touch-icon.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -270,6 +270,13 @@
     }
     #beginBtn:disabled { animation: none; }
     #extra { margin-top: 2px; }
+    #fanNotice {
+      margin: 14px auto 0;
+      max-width: var(--panel-w);
+      font-size: 11px;
+      line-height: 1.5;
+      color: var(--faint);
+    }
     #helpBox {
       margin-top: 14px;
       font-size: 13px;
@@ -378,10 +385,10 @@
     <div class="bg-layer bg-vignette" aria-hidden="true"></div>
     <div class="bg-layer bg-grain" aria-hidden="true"></div>
     <div id="panel">
-      <img class="brand-mark" src="cod2-icon.png" width="96" height="96" alt="Call of Duty 2">
-      <p class="eyebrow">Web client</p>
-      <h1>Call of Duty 2<span>in your browser</span></h1>
-      <p class="sub" id="subline">Runs from your game files. Nothing is uploaded.</p>
+      <img class="brand-mark" src="brand-mark.png" width="96" height="96" alt="">
+      <p class="eyebrow">Web client · robocza nazwa</p>
+      <h1>WWII Browser Multiplayer<span>in your browser</span></h1>
+      <p class="sub" id="subline">Runs from your own game files. Nothing is uploaded.</p>
       <div id="msg">Loading runtime…</div>
       <div id="bar"><div id="barFill"></div></div>
       <button id="beginBtn" type="button" disabled>Enter</button>
@@ -401,6 +408,9 @@
              github.com/Sipex18/opencod2-web</a></p>
         </div>
       </details>
+      <p id="fanNotice">Nieoficjalny projekt tworzony przez miłośników klasycznych gier FPS osadzonych
+         w realiach II wojny światowej. Projekt nie jest powiązany z Activision ani przez nią wspierany.
+         Wszelkie znaki towarowe pozostają własnością ich właścicieli.</p>
       <div id="dropzone" style="display:none" aria-hidden="true"></div>
       <div id="pickFallback"><input id="folderIn" type="file" webkitdirectory multiple></div>
     </div>
@@ -418,6 +428,7 @@
     var v = (typeof ENGINE_ASSET_VER === 'string' && ENGINE_ASSET_VER) ? ENGINE_ASSET_VER : 'dev';
     document.write('<script src="remote-config.js?v=' + encodeURIComponent(v) + '"><\/script>');
     document.write('<script src="cod2_fs.js?v=' + encodeURIComponent(v) + '"><\/script>');
+    document.write('<script src="lobby.js?v=' + encodeURIComponent(v) + '"><\/script>');
   })();
   </script>
   <script>
@@ -1081,7 +1092,13 @@
         if (window.cod2Audio && typeof window.cod2Audio.unlock === 'function')
           window.cod2Audio.unlock();
       } catch (e) {}
-      try { Module.callMain(GAME_ARGS); }
+      /* The lobby (lobby.js) may add "+connect ip:port" for the chosen server. */
+      var lobbyArgs = [];
+      try {
+        if (typeof window.cod2LobbyArgs === 'function') lobbyArgs = window.cod2LobbyArgs() || [];
+      } catch (e) { lobbyArgs = []; }
+      if (lobbyArgs.length) appendBootLog('lobby: ' + lobbyArgs.join(' '));
+      try { Module.callMain(GAME_ARGS.concat(lobbyArgs)); }
       catch (e) {
         console.error(e);
         canvas.style.opacity = '1';
@@ -1095,6 +1112,7 @@
 
     function onEngineLine(t, isErr) {
       appendBootLog(t, isErr);
+      try { if (typeof window.cod2LobbyOnLine === 'function') window.cod2LobbyOnLine(t); } catch (e) {}
       if (isErr) console.error(t); else console.log(t);
       if (fatalLatched) return;
       if (/Error during initialization|Couldn't load|Sys_Error:|OPFS mount failed|Aborted\(/i.test(String(t))) {

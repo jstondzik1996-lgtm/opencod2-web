@@ -1,0 +1,8 @@
+{
+  "servers": [
+    {"id": "local-1", "name": "WWII Browser MP #1", "region": "local",
+     "host": "127.0.0.1", "port": 28961, "mode": "dm", "maxPlayers": 4},
+    {"id": "local-2", "name": "WWII Browser MP #2", "region": "local",
+     "host": "127.0.0.1", "port": 28962, "mode": "dm", "maxPlayers": 4}
+  ]
+}

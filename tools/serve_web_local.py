@@ -7,6 +7,8 @@ same-origin paths the browser already uses:
   /play/api/masterlist/...  →  tools/master_proxy/server.py  :20711
   /play/api/pings/...       →  same
   /play/api/gamews          →  tools/game_proxy/relay.py     :20712
+  /play/api/servers, POST /play/api/matchmake  →  master proxy (project
+                            server directory, when --servers is given)
 
 Run from the repo root (Windows or WSL):
 
@@ -17,6 +19,7 @@ Run from the repo root (Windows or WSL):
 Optional:
   python tools/serve_web_local.py --port 8080 --coop
   python tools/serve_web_local.py --root path/to/web --no-spawn
+  python tools/serve_web_local.py --servers tools/master_proxy/servers.local.json
 
 COOP/COEP: off by default (MEMFS). Pass --coop for pthread / WASMFS / WORKERFS
 (SharedArrayBuffer). Cross-origin isolation is not required for the default build.
@@ -123,10 +126,12 @@ def _wait_port(host: str, port: int, seconds: float, label: str) -> bool:
     return False
 
 
-def spawn_backends(master_port: int, relay_port: int) -> None:
+def spawn_backends(master_port: int, relay_port: int, servers_file: str | None = None) -> None:
     if not _port_open(MASTER_HOST, master_port):
         env = os.environ.copy()
         env["PORT"] = str(master_port)
+        if servers_file:
+            env["COD2_SERVERS_FILE"] = os.path.abspath(servers_file)
         print("starting master proxy  %s" % MASTER_PY, flush=True)
         _CHILDREN.append(subprocess.Popen([sys.executable, MASTER_PY], env=env, cwd=REPO))
         _wait_port(MASTER_HOST, master_port, 6.0, "master proxy")
@@ -143,6 +148,10 @@ def spawn_backends(master_port: int, relay_port: int) -> None:
         env = os.environ.copy()
         env["RELAY_PORT"] = str(relay_port)
         env["RELAY_HOST"] = RELAY_HOST
+        # Allowlist from THIS master proxy; otherwise a test relay on 20722
+        # would read the preview master on 20711.
+        env.setdefault("COD2_RELAY_MASTERLIST",
+                       "http://%s:%d/masterlist/cod2/1.3" % (MASTER_HOST, master_port))
         print("starting game relay    %s" % RELAY_PY, flush=True)
         _CHILDREN.append(subprocess.Popen([sys.executable, RELAY_PY], env=env, cwd=REPO))
         _wait_port(RELAY_HOST, relay_port, 6.0, "game relay")
@@ -198,7 +207,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_OPTIONS(self) -> None:
         self.send_response(204)
         self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "GET, HEAD, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.send_header("Content-Length", "0")
         for k, v in _coop_headers():
@@ -242,6 +251,23 @@ class Handler(BaseHTTPRequestHandler):
             return
         self._serve_static()
 
+    def do_POST(self) -> None:
+        path = urllib.parse.urlsplit(self.path).path
+        if not path.startswith("/play/api/") or path.startswith("/play/api/gamews"):
+            self.close_connection = True
+            self._send_bytes(404, b"not found\n", "text/plain; charset=utf-8")
+            return
+        try:
+            length = int(self.headers.get("Content-Length") or "0")
+        except ValueError:
+            length = -1
+        if length < 0 or length > 4096:
+            self.close_connection = True
+            self._send_bytes(413, b'{"error":1,"description":"body too large"}\n', "application/json")
+            return
+        body = self.rfile.read(length) if length else b""
+        self._proxy_master(path[len("/play/api"):], method="POST", body=body)
+
     def _dev_status(self) -> None:
         master_port = int(CFG["master_port"])
         relay_port = int(CFG["relay_port"])
@@ -264,12 +290,15 @@ class Handler(BaseHTTPRequestHandler):
         body = json.dumps(payload).encode("utf-8")
         self._send_bytes(200, body, "application/json")
 
-    def _proxy_master(self, suffix: str) -> None:
+    def _proxy_master(self, suffix: str, method: str = "GET", body: bytes | None = None) -> None:
         port = int(CFG["master_port"])
         try:
             conn = http.client.HTTPConnection(MASTER_HOST, port, timeout=30)
-            headers = {"Accept": self.headers.get("Accept") or "application/json"}
-            conn.request("GET", suffix, headers=headers)
+            headers = {"Accept": self.headers.get("Accept") or "application/json",
+                       "X-Forwarded-For": self.client_address[0]}
+            if method == "POST":
+                headers["Content-Type"] = "application/json"
+            conn.request(method, suffix, body=body, headers=headers)
             resp = conn.getresponse()
             data = resp.read()
             ctype = resp.getheader("Content-Type") or "application/json"
@@ -341,6 +370,12 @@ class Handler(BaseHTTPRequestHandler):
         rel_norm = rel.replace("\\", "/")
         if rel_norm == "remote-config.js" and os.path.isfile(SRC_REMOTE_CONFIG):
             return SRC_REMOTE_CONFIG
+        # Launcher-only files are served from src/web so lobby/branding edits
+        # do not need a WASM relink (the shell HTML itself still does).
+        if rel_norm in ("lobby.js", "brand-mark.png"):
+            src = os.path.join(REPO, "src", "web", rel_norm)
+            if os.path.isfile(src):
+                return src
         root = os.path.realpath(CFG["webroot"])
         joined = os.path.normpath(os.path.join(root, *rel_norm.split("/")))
         # Reject ../ traversal lexically, before symlinks are resolved. Content
@@ -428,6 +463,8 @@ def main() -> None:
     parser.add_argument("--root", default=None, help="web artifact dir (default: build-web-wsl or build/web)")
     parser.add_argument("--master-port", type=int, default=DEFAULT_MASTER_PORT)
     parser.add_argument("--relay-port", type=int, default=DEFAULT_RELAY_PORT)
+    parser.add_argument("--servers", default=os.environ.get("COD2_SERVERS_FILE"),
+                        help="project server directory JSON for the spawned master proxy")
     parser.add_argument("--no-spawn", action="store_true",
                         help="do not start server.py / relay.py (they must already be listening)")
     parser.add_argument("--coop", action="store_true",
@@ -443,7 +480,7 @@ def main() -> None:
     })
 
     if not args.no_spawn:
-        spawn_backends(args.master_port, args.relay_port)
+        spawn_backends(args.master_port, args.relay_port, args.servers)
 
     httpd = ThreadingHTTPServer((args.bind, args.port), Handler)
     url = "http://%s:%d/cod2.html" % (args.bind, args.port)
@@ -454,6 +491,7 @@ def main() -> None:
     print("  master   /play/api/masterlist/cod2/1.3 -> %s:%d" % (MASTER_HOST, args.master_port), flush=True)
     print("  relay    /play/api/gamews -> %s:%d" % (RELAY_HOST, args.relay_port), flush=True)
     print("  status   http://%s:%d/play/api/dev-status" % (args.bind, args.port), flush=True)
+    print("  servers  %s" % (args.servers or "public masterlist (no --servers)"), flush=True)
     print("  COOP/COEP %s" % ("on (--coop)" if CFG["coop"] else "off (default MEMFS)"), flush=True)
     print("Ctrl+C to stop.", flush=True)
 

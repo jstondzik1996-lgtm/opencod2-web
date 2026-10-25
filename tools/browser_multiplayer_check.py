@@ -1,3 +1,12 @@
+"""Two real browser clients against a local devmap dedicated server.
+
+Checks: distinct clients, spawn, movement, firing, damage to the other player,
+death, respawn, disconnect without hanging the server, and reconnect. Aim and
+setviewpos are test fixtures; collision, hit detection and damage run in the
+real server. A failing check exits non-zero and must be reported as failing.
+Windows-only (reads the installed key from the registry; it is redacted from
+logs and never written to the result JSON).
+"""
 import json
 import os
 import sys
@@ -107,15 +116,98 @@ with sync_playwright() as p:
     shooter.wait_for_timeout(800)
     duel_after = [state(page) for page in pages]
     emit('duel', dict(before=duel_before, after=duel_after))
+
+    # ---- Lifecycle: kill, respawn, disconnect, reconnect ------------------
+    # Only normal client commands are sent. Health is read from the client's
+    # snapshot (server authoritative); nothing here sets health directly.
+    victim = pages[1]
+    lifecycle = dict(kill=[], respawn=[], alive_during_disconnect=[], reconnect=[])
+    died = False
+    death_state = None
+    deadline = time.time() + 25
+    while time.time() < deadline and not died:
+        target = state(victim)
+        if target.get('health', 100) <= 0:
+            died, death_state = True, target
+            break
+        shooter.evaluate('p => Module.ccall("Web_TestAimAt", null, ["number","number","number"], [p[0],p[1],p[2]+35])', target['origin'])
+        if state(shooter).get('clip', 1) == 0:
+            command(shooter, '+reload')
+            shooter.wait_for_timeout(200)
+            command(shooter, '-reload')
+            shooter.wait_for_timeout(2500)
+        command(shooter, '+attack')
+        shooter.wait_for_timeout(600)
+        command(shooter, '-attack')
+        shooter.wait_for_timeout(300)
+        sample = state(victim)
+        lifecycle['kill'].append(dict(health=sample.get('health'), pmType=sample.get('pmType'),
+                                      shooterClip=state(shooter).get('clip')))
+        if sample.get('health', 100) <= 0:
+            died, death_state = True, sample
+    emit('death', dict(died=died, state=death_state))
+
+    respawned = False
+    respawn_state = None
+    if died:
+        victim.bring_to_front()
+        victim.wait_for_timeout(3000)
+        deadline = time.time() + 25
+        while time.time() < deadline:
+            command(victim, '+attack')     # DM: fire to respawn after the death delay
+            victim.wait_for_timeout(300)
+            command(victim, '-attack')
+            victim.wait_for_timeout(1200)
+            sample = state(victim)
+            lifecycle['respawn'].append(dict(health=sample.get('health'), pmType=sample.get('pmType'),
+                                             origin=sample.get('origin')))
+            # Health was <= 0; full health again means a new spawn.
+            if sample.get('health', 0) >= 100:
+                respawned, respawn_state = True, sample
+                break
+    emit('respawn', dict(respawned=respawned, state=respawn_state))
+
+    # Disconnect the victim; the remaining client must keep receiving
+    # advancing snapshots (the earlier bug hung the server on unlink).
+    command(victim, 'disconnect')
+    alive = True
+    last = state(shooter)['snapshotTime']
+    for _ in range(6):
+        shooter.wait_for_timeout(1000)
+        now = state(shooter)
+        lifecycle['alive_during_disconnect'].append(now['snapshotTime'])
+        if now['snapshotTime'] <= last:
+            alive = False
+        last = now['snapshotTime']
+    emit('disconnect', dict(server_alive=alive))
+
+    reconnected = False
+    command(victim, 'connect ' + server)
+    for attempt in range(40):
+        victim.wait_for_timeout(1000)
+        sample = state(victim)
+        lifecycle['reconnect'].append(sample.get('state'))
+        if sample.get('state') == 8:
+            reconnected = True
+            break
+    shooter_after = state(shooter)
+    still_alive_after_reconnect = shooter_after['snapshotTime'] > last
+    emit('reconnect', dict(reconnected=reconnected, shooter=shooter_after))
+
     checks = {
         'two_distinct_clients': duel_before[0]['client'] != duel_before[1]['client'],
         'both_spawned': all(s['health'] > 0 and s['weapon'] > 0 for s in duel_before),
         'both_move': all(sum((r['after']['origin'][i]-r['before']['origin'][i])**2 for i in range(2)) > 1 and r['after']['snapshotTime'] > r['before']['snapshotTime'] for r in movement_results),
         'both_fire': all(r['after']['clip'] < r['before']['clip'] for r in fire_results),
         'damage_to_other_player': duel_after[1]['health'] < duel_before[1]['health'],
+        'target_died': died,
+        'target_respawned': respawned,
+        'server_alive_after_disconnect': alive,
+        'reconnected': reconnected,
+        'server_alive_after_reconnect': still_alive_after_reconnect,
     }
     emit('checks', checks)
-    (root / 'multiplayer-result.json').write_text(json.dumps(dict(checks=checks, movements=movement_results, fire=fire_results, duel=dict(before=duel_before, after=duel_after)), indent=2))
+    (root / 'multiplayer-result.json').write_text(json.dumps(dict(checks=checks, movements=movement_results, fire=fire_results, duel=dict(before=duel_before, after=duel_after), lifecycle=lifecycle), indent=2))
     print('Checks', checks, flush=True)
     for index, page in enumerate(pages):
         emit('final' + str(index), state(page))

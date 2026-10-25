@@ -57,6 +57,9 @@ MASTERLIST_URL = os.environ.get(
     "COD2_RELAY_MASTERLIST", "http://127.0.0.1:20711/masterlist/cod2/1.3")
 ALLOW_ANY = os.environ.get("COD2_RELAY_ALLOW_ANY", "") not in ("", "0", "no")
 ALLOWLIST_REFRESH = float(os.environ.get("COD2_RELAY_ALLOWLIST_REFRESH", "120"))
+# A target that is not in the cached list triggers one fresh fetch, at most
+# this often, so a server that came online after the last refresh is usable.
+ALLOWLIST_MISS_REFRESH = float(os.environ.get("COD2_RELAY_ALLOWLIST_MISS_REFRESH", "5"))
 
 MAX_DGRAM = 16384
 UDP_RECV_TIMEOUT = 0.05
@@ -92,10 +95,12 @@ class AllowList:
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._targets: set[tuple[str, int]] = set()
+        self._last_refresh = 0.0
 
     def _refresh(self) -> None:
+        self._last_refresh = time.time()
         try:
-            with urllib.request.urlopen(MASTERLIST_URL, timeout=10) as res:
+            with urllib.request.urlopen(MASTERLIST_URL, timeout=4) as res:
                 data = json.load(res)
         except (OSError, ValueError, urllib.error.URLError) as exc:
             log.warning("allowlist refresh failed (%s); keeping %d entries",
@@ -110,7 +115,9 @@ class AllowList:
                 continue
             if ip and 0 < port < 65536:
                 targets.add((str(ip), port))
-        if targets:
+        if targets or data.get("source") == "project":
+            # The project directory may legitimately list zero online servers;
+            # an empty public list means the upstream fetch went wrong.
             with self._lock:
                 self._targets = targets
             log.info("allowlist: %d servers", len(targets))
@@ -128,7 +135,13 @@ class AllowList:
 
     def allows(self, host: str, port: int) -> bool:
         with self._lock:
-            return (host, port) in self._targets
+            if (host, port) in self._targets:
+                return True
+        if time.time() - self._last_refresh >= ALLOWLIST_MISS_REFRESH:
+            self._refresh()
+            with self._lock:
+                return (host, port) in self._targets
+        return False
 
 
 _allowlist = AllowList()

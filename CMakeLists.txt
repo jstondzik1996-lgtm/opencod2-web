@@ -80,7 +80,7 @@ list(APPEND WEB_C
   src/unix/linux_common.c src/unix/linux_input.c src/unix/linux_net.c src/unix/sysdiff_statehash.c
   src/PC/zlib/adler32.c src/PC/zlib/infblock.c src/PC/zlib/infcodes.c src/PC/zlib/inffast.c
   src/PC/zlib/inflate.c src/PC/zlib/inftrees.c src/PC/zlib/infutil.c src/PC/zlib/zutil.c
-  src/web/webgl2_compat.c src/web/wasm_aliases.c src/web/cod2_wasmfs_mount.c src/web/builtin_engine_assets.c src/web/web_vid_scale.c src/web/web_master.c src/web/web_snd_driver.c src/web/web_net.c
+  src/web/webgl2_compat.c src/web/wasm_aliases.c src/web/cod2_wasmfs_mount.c src/web/builtin_engine_assets.c src/web/web_vid_scale.c src/web/web_master.c src/web/web_lobby.c src/web/web_snd_driver.c src/web/web_net.c
   src/web/cgevent_keepalive.c)
 
 add_executable(cod2 ${WEB_C} ${WEB_GEN_C})
@@ -110,7 +110,7 @@ if(COD2_WEB_SAFE_HEAP)
   list(APPEND WEB_LINK -sSAFE_HEAP=2 -sSTACK_OVERFLOW_CHECK=2)
 endif()
 if(COD2_WEB_TESTING)
-  list(APPEND WEB_LINK -sEXPORTED_FUNCTIONS=_main,_Cbuf_AddText,_Dvar_GetVariantString,_CL_GetLocalClientActiveCount)
+  list(APPEND WEB_LINK -sEXPORTED_FUNCTIONS=_main,_Cbuf_AddText,_Dvar_GetVariantString,_CL_GetLocalClientActiveCount,_Web_LobbyConnect)
   target_sources(cod2 PRIVATE src/web/web_test.c)
 endif()
 if(COD2_WEB_WASMFS)
@@ -121,12 +121,12 @@ if(COD2_WEB_WASMFS)
   target_compile_options(cod2 PRIVATE -DWEB_WASMFS -pthread)
   list(APPEND WEB_LINK -sWASMFS -pthread -sPTHREAD_POOL_SIZE=4 -sPROXY_TO_PTHREAD=1
        -sOFFSCREEN_FRAMEBUFFER=1
-       -sEXPORTED_FUNCTIONS=_main,_cod2_mount_opfs,_CL_WebMaster_Begin,_CL_WebMaster_AddServer,_CL_WebMaster_UpdatePing,_CL_WebMaster_End)
+       -sEXPORTED_FUNCTIONS=_main,_cod2_mount_opfs,_CL_WebMaster_Begin,_CL_WebMaster_AddServer,_CL_WebMaster_UpdatePing,_CL_WebMaster_End,_Web_LobbyConnect)
 elseif(COD2_WEB_WORKERFS)
   target_compile_options(cod2 PRIVATE -pthread)
   list(APPEND WEB_LINK -pthread -sPTHREAD_POOL_SIZE=4 -sPROXY_TO_PTHREAD=1
        -sOFFSCREENCANVAS_SUPPORT=1 "-sOFFSCREENCANVASES_TO_PTHREAD=#canvas" -lworkerfs.js
-       -sEXPORTED_FUNCTIONS=_main,_CL_WebMaster_Begin,_CL_WebMaster_AddServer,_CL_WebMaster_UpdatePing,_CL_WebMaster_End)
+       -sEXPORTED_FUNCTIONS=_main,_CL_WebMaster_Begin,_CL_WebMaster_AddServer,_CL_WebMaster_UpdatePing,_CL_WebMaster_End,_Web_LobbyConnect)
 else()
   list(APPEND WEB_LINK -lidbfs.js)   # legacy MEMFS default (matches `make web`)
 endif()
@@ -144,7 +144,8 @@ set_target_properties(cod2 PROPERTIES SUFFIX ".html"
 add_custom_command(TARGET cod2 POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy ${COD2_SRC_DIR}/web/cod2_fs.js ${CMAKE_BINARY_DIR}/cod2_fs.js
   COMMAND ${CMAKE_COMMAND} -E copy ${COD2_SRC_DIR}/web/remote-config.js ${CMAKE_BINARY_DIR}/remote-config.js
-  COMMAND ${CMAKE_COMMAND} -E copy ${COD2_SRC_DIR}/web/cod2-icon.png ${CMAKE_BINARY_DIR}/cod2-icon.png
+  COMMAND ${CMAKE_COMMAND} -E copy ${COD2_SRC_DIR}/web/lobby.js ${CMAKE_BINARY_DIR}/lobby.js
+  COMMAND ${CMAKE_COMMAND} -E copy ${COD2_SRC_DIR}/web/brand-mark.png ${CMAKE_BINARY_DIR}/brand-mark.png
   COMMAND ${CMAKE_COMMAND} -E copy ${COD2_SRC_DIR}/web/favicon.png ${CMAKE_BINARY_DIR}/favicon.png
   COMMAND ${CMAKE_COMMAND} -E copy ${COD2_SRC_DIR}/web/apple-touch-icon.png ${CMAKE_BINARY_DIR}/apple-touch-icon.png
   COMMAND ${CMAKE_COMMAND} -E env python3 ${CMAKE_SOURCE_DIR}/tools/patch_web_proxy_receive.py ${CMAKE_BINARY_DIR}/cod2.js)

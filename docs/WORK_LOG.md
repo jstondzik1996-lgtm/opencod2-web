@@ -26,4 +26,12 @@ Upstream baseline: `c301dd6e8550c59a3fdd3081c73dc4ffd2c8602c`.
 - Added `tests/cm_world_link/` (real `cm_world.c`, 32-bit, stubs). Old code: FAIL; new code: OK. Python tests OK.
 - Not run: Windows/Emscripten builds and two-client damage. Steps for the local agent are in `HANDOFF.md`.
 
+## 2026-10-25 — Claude: own server directory, Quick Play, lobby (P1 code; real-stack test pending)
+
+- Stage: P0 waits for Work's real two-client run; P1 implemented in parallel.
+- Files: `tools/master_proxy/{directory.py,server.py,servers.example.json}`, `tools/serve_web_local.py`, `tools/game_proxy/relay.py`, `src/web/{lobby.js,web_lobby.c,shell_nzp.html,brand-mark.png,favicon*.png,apple-touch-icon.png}`, `CMakeLists.txt`, `tools/browser_multiplayer_check.py`, new tests `tools/test_server_directory.py`, `tools/test_lobby_browser.py`.
+- Harness: added death, respawn, disconnect (server keeps sending snapshots) and reconnect checks; no health is set by the test.
+- Results (cloud): 18 Python tests OK, including headless Chromium lobby test with stubbed engine; `Web_LobbyConnect` address parser tested natively. Not built with Emscripten/MinGW here (no SDK/network). Not run against a real server.
+- Next: Work runs P0 with the extended harness, then the P1 steps in HANDOFF. Claude continues with P2 design (own player identity for project servers) and track B asset separation plan.
+
 See `HANDOFF.md` for exact endpoints, build steps, limitations and next work. This checkpoint does not establish working combat.
