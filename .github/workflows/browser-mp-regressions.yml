@@ -1,0 +1,46 @@
+name: Browser MP regression tests (no game assets)
+
+on:
+  push:
+    branches:
+      - codex/browser-mp-checkpoint
+    paths:
+      - "tools/**"
+      - "tests/cm_world_link/**"
+      - "src/PC/qcommon/cm_world.c"
+      - ".github/workflows/browser-mp-regressions.yml"
+  pull_request:
+    paths:
+      - "tools/**"
+      - "tests/cm_world_link/**"
+      - "src/PC/qcommon/cm_world.c"
+      - ".github/workflows/browser-mp-regressions.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  python-regressions:
+    name: Python server, lobby and asset-pack regressions
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Run asset-free regression tests
+        run: python -m unittest discover -s tools -p 'test_*.py' -v
+  world-sector-regressions:
+    name: Real cm_world.c entity-list harness (i386)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ensure 32-bit clang and GNU linker exist
+        run: |
+          clang --version
+          ld --version | head -1
+      - name: Compile and run original server collision-sector code
+        run: sh tests/cm_world_link/run.sh
