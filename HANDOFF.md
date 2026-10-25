@@ -1,6 +1,6 @@
 # CoD2 browser multiplayer handoff
 
-Updated: 2026-10-25. This is an unfinished port, not a finished multiplayer release.
+Updated: 2026-10-25 (Claude: entity-list + temp box fix, integration pending). This is an unfinished port, not a finished multiplayer release.
 
 ## Goal and boundaries
 
@@ -18,14 +18,30 @@ Run the original Call of Duty 2 1.3 multiplayer client inside a browser, without
 
 ## Current blocker and next experiment
 
-Player bullets hit world entity 1022 and do not damage the second player. Two defects appear connected:
+Player bullets hit world entity 1022 and did not damage the second player. Claude (2026-10-25, commit after 774cd3a) analysed and applied the paired fix:
 
-1. `CM_TempBoxModel` sets `brush->contents` but leaves `model->leaf.brushContents` zero. `CM_LinkEntity` reads the leaf contents and therefore unlinks player hulls from collision sectors.
-2. Enabling leaf contents alone exposed an infinite entity-list traversal. In `cm_world.c`, `CM_WorldEntityIndex` returns a zero-based index and its inverse indexes directly. Existing list readers use zero as sentinel and access `svEntities[index - 1]`. The helpers likely need index + 1 / index - 1. This is a hypothesis awaiting integration testing.
+1. `cm_trace.c` `CM_TempBoxModel` now also sets `model->leaf.brushContents = contents`. Without it `CM_LinkEntity` saw contents 0 and unlinked every player hull, AND the leaf test in `cm_trace.c` (`if (!leaf || !(leaf->brushContents & tw->contents))`) skipped the player box even when it was a candidate.
+2. `cm_world.c` `CM_WorldEntityIndex` now returns `ent - svEntities + 1` and `CM_WorldEntityForIndex` returns `svEntities[index - 1]` (via `imp_sv`, like every other reader). Every reader in the file (`CM_UnlinkEntity`, `CM_AreaEntities_r`, all trace/sight traversals) already used `index - 1` with 0 as the end-of-list sentinel; only the two writers (`CM_InsertEntityIntoWorldSector`, `CM_SortNode`) were zero-based. That explains the earlier hang: `CM_UnlinkEntity` loops `while (1)` until it finds the entity, and with the off-by-one encoding it never does. Entity 0 (first player) was also stored as the sentinel and silently lost.
 
-The first experiment was reverted to preserve the visible preview. Do BOTH fixes together on an isolated server; verify entity 0, insertion/removal, movement, bullet damage, disconnect, and that snapshots keep advancing. Do not confuse a C hull unit test with a passed combat integration test.
+Verified so far (cloud, no game assets): `tests/cm_world_link/run.sh` builds the REAL `cm_world.c` as 32-bit x86 with stubs; old code fails (entity 0 missing, then hangs), fixed code passes 4000 random link/move/unlink steps compared against a brute-force scan. Python tests pass. Both changed files pass a 32-bit clang syntax check.
 
-`sv_world_mp.c` now allocates four rows for the affine transform used by MatrixTransposeTransformVector43 and supplies entity origin; this fixes a real out-of-bounds read but did not alone restore hits. Optional `g_debugBullets 6` logging records ray/candidate evidence. Remove noisy instrumentation when diagnosis is complete.
+NOT yet verified: Windows/MinGW build, Emscripten build, and the real two-client damage test. This is a hull/list unit test, not combat.
+
+### Instructions for the local Windows agent ("work")
+
+1. `git pull` this branch in `work/opencod2-web`. Rebuild `build-win32` (server) and `build/web` (client) exactly as in "Build and test" below.
+2. Copy the new `cod2_win32_ded.exe` into a SEPARATE test server root (not the 8080 preview server). Start it on 28961 with `g_debugBullets 6`, web service on 8081/20721/20722 (env vars below). Leave 8080/20711/20712/28960 running untouched.
+3. Run `tools/browser_multiplayer_check.py` with `COD2_TEST_URL=http://127.0.0.1:8081/cod2.html`, `COD2_TEST_SERVER=127.0.0.1:28961`, separate `COD2_TEST_OUTPUT`.
+4. Expected log: `bullet candidate: entity=<other client>` followed by `bullet trace: ... hit=<client number>` (not 1022). Target health must drop below 100.
+5. Then verify manually / by script: kill -> death, respawn, disconnect of one client while the other keeps receiving advancing snapshots, reconnect. Server must not hang (watch CPU and `serverTime`).
+6. If the server hangs or crashes: capture the server log tail and the last `bullet` lines into `docs/evidence/`, revert only on the test server, and report in WORK_LOG. Do not update the 8080 preview until steps 3–5 pass.
+7. Save the sanitized result JSON as `docs/evidence/two-client-damage.json` (no CD key, no profile paths), update this file and WORK_LOG, commit and push.
+
+`sv_world_mp.c` allocates four rows for the affine transform used by MatrixTransposeTransformVector43 and supplies entity origin; this fixed a real out-of-bounds read but did not alone restore hits. Optional `g_debugBullets 6` logging records ray/candidate evidence. Remove the noisy instrumentation once damage is proven.
+
+## Product direction requested by the user (2026-10-25)
+
+The user wants the browser build to join a game immediately or pick from a list of OUR servers (the project's own dedicated servers via `tools/master_proxy` / relay), not the old stock servers. Scope that is fine to build: own master list + server picker in the browser UI, auto-connect, our dedicated servers configured for this project's clients. Boundaries that stay: no publishing of game assets, keys or profiles; players still load their own legally obtained game files. Do not implement cracking/key generation or a hosted copy of the game for people who do not own it. Discuss key-auth handling on our own servers with the user before implementing it.
 
 ## Local Windows state (machine-specific, not portable paths)
 

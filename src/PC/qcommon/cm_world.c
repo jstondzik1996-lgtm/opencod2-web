@@ -722,15 +722,21 @@ void CM_ClipMoveToEntities(moveclip_t *clip, trace_t *trace)
     CM_ClipMoveToEntities_r(clip, 1, start, end, trace);
 }
 
+/*
+ * World-sector entity lists store entity number + 1, so that 0 can terminate a
+ * list (entity 0 is a real player). Every reader in this file (unlink, area,
+ * trace and sight traversals) dereferences svEntities[index - 1]; the writers
+ * must use the same encoding or CM_UnlinkEntity never finds the entity.
+ */
 static unsigned short CM_WorldEntityIndex(const svEntity_t *ent)
 {
     server_t *sv = (server_t *)imp_sv;
-    return (unsigned short)(ent - sv->svEntities);
+    return (unsigned short)(ent - sv->svEntities + 1);
 }
 
 static svEntity_t *CM_WorldEntityForIndex(unsigned short entIndex)
 {
-    return &sv.svEntities[(unsigned int)entIndex];
+    return &((server_t *)imp_sv)->svEntities[(unsigned int)entIndex - 1];
 }
 
 static unsigned short CM_AllocWorldSector(const vec_t *mins, const vec_t *maxs)

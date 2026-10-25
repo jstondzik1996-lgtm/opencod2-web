@@ -15,4 +15,11 @@ Upstream baseline: `c301dd6e8550c59a3fdd3081c73dc4ffd2c8602c`.
 - Temporary hull contents experiment exposed a sector entity-list infinite loop and was reverted. Identified suspected zero-based/sentinel mismatch as the next paired fix. Preview server restored to the earlier stable build.
 - Created user's fork at https://github.com/jstondzik1996-lgtm/opencod2-web for durable checkpoints and Claude handoff.
 
+## 2026-10-25 — Claude: paired collision-list fix (integration pending)
+
+- `cm_world.c`: world-sector entity list writers now store entity number + 1 like all readers (fixes lost entity 0 and the infinite loop in `CM_UnlinkEntity` that hung the earlier experiment).
+- `cm_trace.c`: `CM_TempBoxModel` sets `leaf.brushContents`, so player hulls are linked and not skipped by the leaf contents test.
+- Added `tests/cm_world_link/` (real `cm_world.c`, 32-bit, stubs). Old code: FAIL; new code: OK. Python tests OK.
+- Not run: Windows/Emscripten builds and two-client damage. Steps for the local agent are in `HANDOFF.md`.
+
 See `HANDOFF.md` for exact endpoints, build steps, limitations and next work. This checkpoint does not establish working combat.
