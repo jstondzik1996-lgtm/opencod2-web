@@ -53,7 +53,14 @@ EMSCRIPTEN_KEEPALIVE int Web_LobbyConnect(const char *address)
 
     if (!Web_ParseIPv4Port(address))
         return 0;
-    snprintf(cmd, sizeof(cmd), "connect %s\n", address);
+    /*
+     * The lobby only passes directory-approved targets. On subsequent
+     * joins/retries the engine is already running and boot-time +set args
+     * no longer apply; set LAN authorization before the connect command.
+     * The relay validates the project's guest session and server ticket.
+     * Stock/external servers are never admitted through this endpoint.
+     */
+    snprintf(cmd, sizeof(cmd), "set net_lanauthorize 0\nconnect %s\n", address);
     Cbuf_AddText(cmd);
     return 1;
 }
