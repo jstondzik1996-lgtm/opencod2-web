@@ -1,5 +1,15 @@
 # Work log
 
+## 2026-10-25 — ChatGPT: local QA launcher, ladder baseline and remote-player diagnostics
+
+- User reports locally working `http://127.0.0.1:8081/cod2.html` but major gameplay defects: stalls, missing assets, invisible second player, weapon glitches, broken ladders. The browser machine is **NOT directly accessible** to this ChatGPT session, so these visual/runtime issues are reported by the user; not locally reproduced here.
+- Created `tools/RUN_UPDATED_LOCAL_TEST.bat` (commit `7c4d524`) for the user's already existing `work` folder. It verifies expected local repo/SDK/compiler/assets, refuses dirty tracked files or wrong branch, fast-forward pulls the shared branch, builds WASM and Win32 in **separate** `build/qa-web` / `build-win32-qa`, junctions to the already installed asset pack and runs a **separate QA stack** at 8082 / 20723 / 20724 / 28963 without intentionally killing previews on 8080/8081. The batch file is **UNTESTED on Windows** and must not be presented as validated one-click deployment; its initial execution may require local adjustments.
+- Verified source-level bug: `PM_LadderMove` previously called `PM_AirMove` outright, which discards requested vertical ladder motion and applies air gravity. Replaced with a **conservative experimental** ladder-only climbing baseline with gravity off, W/S vertical and A/D tangent movement (commit `a7b2d33`). This is **not proven** to fix ladders in CoD2 maps; ladder-state detection/pm_flags and exact original feel still need browser/native gameplay tests.
+- `CG_Player` silently returned when `Com_GetClientDObj` was null, leaving players invisible with no diagnostic. Added rate-capped `[cg-player] missing DObj` logging of entity/client numbers (commit `965d9d9`). **Diagnostic only**; the actual reason the DObj is missing, or any shader/visibility issue, must be established from local logs before fixing.
+- Next real work: in fresh QA build confirm player sprites/model, capture `[cg-player]`/animation registration errors, frame timings/WebGL memory and packet loss; isolate movement bugs vs relay timing; inspect actual `PMF_LADDER` detection and original ladder gameplay; validate true two-player damage/death. CI compilation/tests are not equivalent to runtime.
+- No proprietary assets, CD keys or Windows paths were committed; no local processes were touched from this chat.
+
+
 ## 2026-10-25 — ChatGPT: keyless / guest-session P0 test mode after local preview started
 
 - User confirmed their local browser preview works at `http://127.0.0.1:8081/cod2.html`. This **cannot be remotely inspected** from ChatGPT: 127.0.0.1 points at the user's own machine. The last documented Windows two-client test on e49bf6d **failed damage/death/respawn**, and `CM_TraceBox` has since been fixed in 19253db; **a new real run is still required**.
