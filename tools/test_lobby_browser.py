@@ -165,7 +165,13 @@ class LobbyBrowserTests(unittest.TestCase):
             args = page.evaluate('window.__engine.args')
             a_addr = '127.0.0.1:%d' % self.a.port
             b_addr = '127.0.0.1:%d' % self.b.port
-            self.assertEqual(args[-5:], ['+set', 'name', 'Sgt_Kowal_ski', '+connect', a_addr])
+            # Regression: project-owned LAN-mode connection must be explicit
+            # BEFORE +connect, or a clean browser tries CD-key authorization.
+            # No game key is ever injected into command-line arguments.
+            self.assertEqual(args[-8:], ['+set', 'net_lanauthorize', '0',
+                                         '+set', 'name', 'Sgt_Kowal_ski',
+                                         '+connect', a_addr])
+            self.assertNotIn('codkey', ' '.join(args).lower())
             self.assertEqual(self.dir.list_servers()[0]['reserved'], 1)
             tickets = page.evaluate('window.COD2_RELAY_TICKETS || {}')
             relay_session = page.evaluate('window.COD2_RELAY_SESSION || ""')
