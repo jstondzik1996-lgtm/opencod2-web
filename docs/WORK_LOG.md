@@ -1,5 +1,14 @@
 # Work log
 
+## 2026-10-25 — ChatGPT: Windows QA runner Git/PATH fix from user screenshot
+
+- User executed `work/RUN_UPDATED_LOCAL_TEST.bat` in PowerShell. Actual output showed **`ERROR: git.exe missing`**, then a misleading empty current branch check. No build/gameplay update took place.
+- Confirmed root cause: the original runner expected Git in PATH and the compound `where git ... || (echo ... & goto :fail)` did not stop before later branch code. This is a **runner setup failure**, not a result about missing player models/ladder gameplay.
+- Updated **the same repo/file** `tools/RUN_UPDATED_LOCAL_TEST.bat` in commit `447a3cc`. It now searches common local Git paths; otherwise uses the official Git for Windows **MinGit v2.56.0(3)** zip (39.85 MB) downloaded to a portable `work/portable-git` directory, checks fixed SHA-256 `2e5619966e588fde5f8122c5557cad50c0fbafcaed736689f40ec1dfb1d78ea7`, and never installs Git system-wide. Missing tooling returns a hard error. Detects CMake/Ninja in common paths, uses fast-forward-only update of the same existing checkout, and still targets isolated QA ports 8082 / 28963.
+- **Not yet executed on the user's Windows host after fix**. Download the new BAT from its commit, replacing the old one in `work/`, and retry; capture the first ERROR if it still fails.
+- No original CoD2 files or user's live 8081 preview were modified from this cloud session.
+
+
 ## 2026-10-25 — ChatGPT: local QA launcher, ladder baseline and remote-player diagnostics
 
 - User reports locally working `http://127.0.0.1:8081/cod2.html` but major gameplay defects: stalls, missing assets, invisible second player, weapon glitches, broken ladders. The browser machine is **NOT directly accessible** to this ChatGPT session, so these visual/runtime issues are reported by the user; not locally reproduced here.
