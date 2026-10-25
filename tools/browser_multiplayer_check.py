@@ -34,7 +34,11 @@ def command(page, text):
     page.evaluate('text => Module.ccall("Cbuf_AddText", null, ["string"], [text + "\\n"])', text)
 
 with sync_playwright() as p:
+    # COD2_TEST_BROWSER: path to an installed Chrome/Chromium when Playwright's
+    # own browser build is not downloaded (e.g. offline test machines).
+    browser_exe = os.environ.get('COD2_TEST_BROWSER') or None
     context = p.chromium.launch_persistent_context(str(root / 'browser-profile'), headless=True,
+        executable_path=browser_exe,
         args=['--enable-unsafe-swiftshader', '--autoplay-policy=no-user-gesture-required', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows'],
         viewport=dict(width=1280, height=800))
     pages = []

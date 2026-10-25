@@ -44,6 +44,23 @@ class ConfigError(ValueError):
     pass
 
 
+def udp_query_socket() -> socket.socket:
+    """Non-blocking UDP socket for status/ping sweeps.
+
+    On Windows a datagram to a closed port makes the NEXT recvfrom() fail with
+    WSAECONNRESET (10054). Without handling, one offline server ended the whole
+    sweep and every other server was reported offline. Disable that behaviour
+    where possible; the receive loops also skip ConnectionResetError."""
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.setblocking(False)
+    if hasattr(socket, "SIO_UDP_CONNRESET"):
+        try:
+            sock.ioctl(socket.SIO_UDP_CONNRESET, False)
+        except OSError:
+            pass
+    return sock
+
+
 def _ipv4(text: str) -> bool:
     parts = str(text).split(".")
     return len(parts) == 4 and all(p.isdigit() and 0 <= int(p) <= 255 for p in parts)
@@ -179,8 +196,7 @@ class ServerDirectory:
             targets = list(self._by_addr)
         if not targets:
             return
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        sock.setblocking(False)
+        sock = udp_query_socket()
         sent: dict[tuple[str, int], float] = {}
         got: dict[tuple[str, int], tuple[dict, int]] = {}
         try:
@@ -197,6 +213,8 @@ class ServerDirectory:
                     break
                 try:
                     data, src = sock.recvfrom(16384)
+                except ConnectionResetError:
+                    continue   # ICMP port unreachable from an offline server
                 except OSError:
                     break
                 if src not in sent or src in got:

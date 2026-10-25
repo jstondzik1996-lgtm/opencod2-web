@@ -44,10 +44,10 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 try:
-    from directory import ConfigError, ServerDirectory, load_config
+    from directory import ConfigError, ServerDirectory, load_config, udp_query_socket
     import sessions
 except ImportError:  # imported as tools.master_proxy.server
-    from .directory import ConfigError, ServerDirectory, load_config
+    from .directory import ConfigError, ServerDirectory, load_config, udp_query_socket
     from . import sessions
 
 UPSTREAM = os.environ.get("COD2_MASTER_UPSTREAM", "https://api.cod.pm").rstrip("/")
@@ -159,8 +159,7 @@ class Pinger:
             time.sleep(PING_INTERVAL)
             return
 
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        sock.setblocking(False)
+        sock = udp_query_socket()
         try:
             # CoD2 connectionless packet: 0xFFFFFFFF + command. The challenge is
             # echoed back in infoResponse, but matching on the source address is
@@ -185,6 +184,8 @@ class Pinger:
                     break
                 try:
                     _, src = sock.recvfrom(2048)
+                except ConnectionResetError:
+                    continue   # Windows: ICMP unreachable from an offline server
                 except OSError:
                     break
                 start = sent_at.get(src)

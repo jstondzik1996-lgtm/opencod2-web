@@ -154,6 +154,36 @@ class DirectoryTests(unittest.TestCase):
         self.assertEqual(len(ml['servers'][0]['playerinfo']), 2)
         self.assertEqual(ml['source'], 'project')
 
+    def test_windows_connreset_does_not_end_sweep(self):
+        """Windows reports ICMP port-unreachable from an offline server as
+        ConnectionResetError on a later recvfrom; the sweep must continue."""
+        a = self.fake(players=1)
+        dead = free_udp_port()
+        b = self.fake(players=2)
+        real = directory.udp_query_socket
+
+        class ResettingSocket:
+            def __init__(self):
+                self._s = real()
+                self._raised = False
+
+            def recvfrom(self, n):
+                if not self._raised:
+                    self._raised = True
+                    raise ConnectionResetError(10054, 'WSAECONNRESET')
+                return self._s.recvfrom(n)
+
+            def __getattr__(self, name):
+                return getattr(self._s, name)
+
+        directory.udp_query_socket = ResettingSocket
+        try:
+            d = self.make([entry('a', a.port), entry('dead', dead), entry('b', b.port)])
+        finally:
+            directory.udp_query_socket = real
+        status = {s['id']: s['status'] for s in d.list_servers()}
+        self.assertEqual(status, {'a': 'online', 'dead': 'offline', 'b': 'online'})
+
     def test_goes_stale(self):
         a = self.fake()
         d = self.make([entry('a', a.port)], stale_after=10)
