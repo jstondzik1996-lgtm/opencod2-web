@@ -9,11 +9,11 @@ from __future__ import annotations
 import re
 
 # The tokens appear as ordinary URL query args in JSON-serialized events.
-_TOKEN_QUERY = re.compile(r'([?&](?:ticket|session|access|token)=)[^&"\\\\\\s]+', re.I)
+_TOKEN_QUERY = re.compile(r'([?&](?:ticket|session|access|token)=)[^&" ]+', re.I)
 
 
 def sanitize_test_log(value: str, installed_key: str | None = None) -> str:
-    value = _TOKEN_QUERY.sub(r'\\1[redacted]', value)
+    value = _TOKEN_QUERY.sub(lambda match: match.group(1) + '[redacted]', value)
     if installed_key:
         value = value.replace(installed_key, '[redacted]')
         if len(installed_key) >= 16:
