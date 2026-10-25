@@ -595,8 +595,9 @@ clipHandle_t CM_TempBoxModel(const vec_t *mins, const vec_t *maxs, int contents)
     CM_CopyVec3(mins, brush->mins);
     CM_CopyVec3(maxs, brush->maxs);
     brush->contents = contents;
-    /* CM_LinkEntity and the leaf trace test read the model leaf contents. */
-    model->leaf.brushContents = contents;
+    /* box_model.leaf.brushContents stays -1 (set when the hull is built in
+     * cm_load_obj.c), as in the original: the leaf test always passes and
+     * brush->contents filters. */
 
     return CM_TEMP_BOX_MODEL;
 }

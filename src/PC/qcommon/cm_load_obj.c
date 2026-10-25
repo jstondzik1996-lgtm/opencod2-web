@@ -1004,7 +1004,12 @@ void CM_LoadMapFromBsp(const char *name, int usePvs)
         box_brush->contents = -1;
 
         cmLocal->box_model.leaf.leafBrushNode = -1;
-        cmLocal->box_model.leaf.brushContents = 0;
+        /* The temp box hull matches every content type at the leaf level;
+         * the brush (CM_TempBoxModel sets box_brush->contents) decides.
+         * With 0 here CM_LinkEntity unlinked every player hull and leaf
+         * traces skipped it, so bullets never reached other players. */
+        cmLocal->box_model.leaf.brushContents = -1;
+        cmLocal->box_model.leaf.terrainContents = 0;
         cmLocal->box_model.leaf.mins[0] = 3.4028234663852886e+38f;
         cmLocal->box_model.leaf.mins[1] = 3.4028234663852886e+38f;
         cmLocal->box_model.leaf.mins[2] = 3.4028234663852886e+38f;

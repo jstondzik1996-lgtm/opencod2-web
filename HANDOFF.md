@@ -17,7 +17,14 @@ Run the original Call of Duty 2 1.3 multiplayer client inside a browser, without
 - Project server directory, `/play/api/servers`, Quick Play matchmaking with slot reservations, relay allowlist from the directory and the launcher lobby are implemented and tested in the cloud against fake UDP servers and a stubbed engine (see "Own servers and lobby"). Not yet tested with the real dedicated server or real WASM client.
 - Not verified: all maps, stock-server interoperability, Internet play, performance on other hardware, campaign, full round lifecycle. Headless rendering ran around 10–12 FPS in a diagnostic build; actual GPU renderer was not measured.
 
-## Current blocker and next experiment
+## P0 status (Claude, 2026-10-25, latest)
+
+Two independent blockers were on the bullet path; both are fixed in code, neither is proven by a real two-client run yet:
+1. Player hulls were never linked for collision (temp box leaf contents 0) and the world-sector lists mixed 0/1-based indices. Fixed in `cm_load_obj.c` (leaf contents -1 like the original) and `cm_world.c`.
+2. `ClientEndFrame` never set `takedamage = 1` for living players, so every hit was discarded before damage. Fixed in `g_active_mp.c` (also viewmodelIndex and PM_DEAD selection).
+Asset-free tests: `tests/cm_world_link/run.sh`, `tests/dobj_trace/run.sh`, Python suite; all run in CI. Next proof needed: `tools/browser_multiplayer_check.py` on the local Windows stack.
+
+## Current blocker and next experiment (history)
 
 Player bullets hit world entity 1022 and did not damage the second player. Claude (2026-10-25, commit after 774cd3a) analysed and applied the paired fix:
 

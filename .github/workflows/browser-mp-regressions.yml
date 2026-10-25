@@ -6,14 +6,16 @@ on:
       - codex/browser-mp-checkpoint
     paths:
       - "tools/**"
-      - "tests/cm_world_link/**"
-      - "src/PC/qcommon/cm_world.c"
+      - "tests/**"
+      - "src/**"
+      - "CMakeLists.txt"
       - ".github/workflows/browser-mp-regressions.yml"
   pull_request:
     paths:
       - "tools/**"
-      - "tests/cm_world_link/**"
-      - "src/PC/qcommon/cm_world.c"
+      - "tests/**"
+      - "src/**"
+      - "CMakeLists.txt"
       - ".github/workflows/browser-mp-regressions.yml"
   workflow_dispatch:
 
@@ -33,7 +35,7 @@ jobs:
       - name: Run asset-free regression tests
         run: python -m unittest discover -s tools -p 'test_*.py' -v
   world-sector-regressions:
-    name: Real cm_world.c entity-list harness (i386)
+    name: Real cm_world.c and dobj.c harnesses (i386)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -44,6 +46,34 @@ jobs:
           ld --version | head -1
       - name: Compile and run original server collision-sector code
         run: sh tests/cm_world_link/run.sh
+      - name: Compile and run original bone hitbox trace (DObjTraceline)
+        run: sh tests/dobj_trace/run.sh
+
+  win32-server-compilation:
+    name: MinGW i686 dedicated server build (no game assets)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install MinGW-w64 i686 toolchain and zlib
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-mingw-w64-i686 g++-mingw-w64-i686 binutils-mingw-w64-i686 libz-mingw-w64-dev ninja-build
+      - name: Configure Windows dedicated server
+        run: |
+          cmake -S . -B build/ci-win32 -G Ninja \
+            -DCMAKE_SYSTEM_NAME=Windows \
+            -DCMAKE_C_COMPILER=i686-w64-mingw32-gcc \
+            -DCMAKE_CXX_COMPILER=i686-w64-mingw32-g++ \
+            -DCMAKE_ASM_COMPILER=i686-w64-mingw32-gcc \
+            -DCMAKE_RC_COMPILER=i686-w64-mingw32-windres \
+            -DCMAKE_FIND_ROOT_PATH=/usr/i686-w64-mingw32
+      - name: Compile dedicated server
+        run: cmake --build build/ci-win32 -j 4
+      - name: Verify server binary
+        run: |
+          ls -la build/ci-win32/*.exe
+          echo "Win32 server compilation: OK; not run (needs game assets)"
 
   browser-lobby-regressions:
     name: Chromium lobby and Quick Play smoke test (stub engine)

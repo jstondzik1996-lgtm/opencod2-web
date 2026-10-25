@@ -127,8 +127,9 @@ static void place(int i, float x, float y, float z, int contents)
     g->r.absmax[0] = x + 15.0f;
     g->r.absmax[1] = y + 15.0f;
     g->r.absmax[2] = z + 70.0f;
-    /* What the fixed CM_TempBoxModel now reports for this hull. */
-    g_box.leaf.brushContents = contents;
+    /* The temp box hull as built in cm_load_obj.c: leaf contents -1, the
+     * brush carries the entity's real contents. */
+    g_box.leaf.brushContents = -1;
     g_box.leaf.terrainContents = 0;
     if (contents)
         CM_LinkEntity(&sv.svEntities[i], g->r.absmin, g->r.absmax, 0xFFF);

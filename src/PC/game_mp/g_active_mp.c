@@ -1285,10 +1285,15 @@ void ClientEndFrame(gentity_t *ent)
 
     ent->r.svFlags = (ent->r.svFlags | 2) & 0xfe;
     ent->active = 1;
+    /* A playing client can be damaged. SpectatorClientEndFrame clears this
+     * and the dead branch below clears it again; without it Bullet_Fire and
+     * G_Damage reject every hit on a living player. */
+    ent->takedamage = 1;
 
     client->ps.pm_flags |= 0x00800000;
     client->ps.pm_flags &= 0xfcffffff;
-    client->ps.damageCount = client->sess.viewmodelIndex;
+    /* The view model index; damageCount belongs to P_DamageFeedback. */
+    client->ps.viewmodelIndex = client->sess.viewmodelIndex;
 
     G_SetClientContents(ent);
 
@@ -1302,9 +1307,11 @@ void ClientEndFrame(gentity_t *ent)
     } else if (client->ufo) {
         client->ps.pm_type = 3;
     } else if (client->sess.sessionState == SESS_STATE_DEAD) {
-        client->ps.pm_type = (ent->count == 1) ? 6 : 7;
+        /* PM_DEAD (6), or PM_DEAD_LINKED (7) when attached to an entity. */
+        client->ps.pm_type = ent->tagInfo ? 7 : 6;
         ent->r.svFlags = (ent->r.svFlags | 1) & 0xfd;
         ent->active = 0;
+        ent->takedamage = 0;
     } else {
         client->ps.pm_type = ent->tagInfo != 0;
     }

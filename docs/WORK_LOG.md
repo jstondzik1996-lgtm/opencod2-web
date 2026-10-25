@@ -44,4 +44,15 @@ Upstream baseline: `c301dd6e8550c59a3fdd3081c73dc4ffd2c8602c`.
 - Results (cloud): 18 Python tests OK, including headless Chromium lobby test with stubbed engine; `Web_LobbyConnect` address parser tested natively. Not built with Emscripten/MinGW here (no SDK/network). Not run against a real server.
 - Next: Work runs P0 with the extended harness, then the P1 steps in HANDOFF. Claude continues with P2 design (own player identity for project servers) and track B asset separation plan.
 
+## 2026-10-25 — Claude: P0 hit-path audit, takedamage fix (combat integration still pending)
+
+- Audited the whole bullet path against an independent CoD2 server reconstruction (CoD2rev_Server, AGPL; used only as a behavioural reference, no code copied): `Bullet_Fire_Extended`, `SV_Trace`, `CM_PointTraceToEntities`, `SV_PointTraceToEntity`, `DObjTraceline`, `G_Damage`, `Scr_PlayerDamage`, `PlayerCmd_finishPlayerDamage`, `G_SetClientContents`, `GScr_LoadGameTypeScript`.
+- **Real bug (blocks all player damage):** `ClientEndFrame` never set `ent->takedamage = 1` for a playing client (only corpses/triggers ever got 1), so `Bullet_Fire_Extended` and `G_Damage` rejected every hit even after the collision fix. Restored, plus `takedamage = 0` while dead.
+- Same function: wrote `sess.viewmodelIndex` into `ps.damageCount` instead of `ps.viewmodelIndex` (view model + damage feedback), and chose PM_DEAD/PM_DEAD_LINKED from `ent->count` instead of `ent->tagInfo`. Both fixed.
+- Collision: the original keeps the temp box hull's `leaf.brushContents = -1` from load time and `CM_TempBoxModel` only sets the brush contents. Moved my earlier fix there (`cm_load_obj.c`), removed the per-call leaf write. `tests/cm_world_link` updated to the -1 hull; still OK, old cm_world.c still FAILs.
+- Checked and left as in the original: `finishPlayerDamage` reads the inflictor from argument 1 (same quirk in the reference).
+- New `tests/dobj_trace/` runs the REAL `dobj.c` DObjTraceline on a synthetic skeleton (12 checks: fraction, normal, misses, rotation, world limit, priorities, inheritance, ignoreCollision, start-solid). Mutation-checked: three deliberate bugs are each caught.
+- CI: hitbox test added; new MinGW i686 dedicated-server compile job; trigger paths now cover src/ and CMakeLists.
+- Pending (needs local Windows + game files): real two-client run of `tools/browser_multiplayer_check.py`. Expected now: `damage_to_other_player`, `target_died`, `target_respawned` true.
+
 See `HANDOFF.md` for exact endpoints, build steps, limitations and next work. This checkpoint does not establish working combat.
