@@ -152,6 +152,45 @@ typedef struct {
 
 static WebGL2CompatState gl2;
 
+/*
+ * The legacy renderer makes many tiny draw calls every frame. Converting its
+ * client arrays to WebGL2 used to malloc/free a vertex array on EVERY draw,
+ * which creates needless allocator churn (and WASM heap growth) during play.
+ *
+ * glBufferData uploads synchronously copy the converted vertices before this
+ * scratch buffer is reused, so one growable CPU buffer is enough. No GL object
+ * or public API changes are required. Index arrays remain independently owned.
+ */
+static WebGL2Vertex *gl2_vertex_scratch;
+static size_t gl2_vertex_scratch_capacity;
+
+static WebGL2Vertex *reserve_compat_vertices(size_t vertex_count)
+{
+    size_t capacity;
+    WebGL2Vertex *next;
+
+    if (!vertex_count || vertex_count > SIZE_MAX / sizeof(WebGL2Vertex))
+        return NULL;
+    if (vertex_count <= gl2_vertex_scratch_capacity)
+        return gl2_vertex_scratch;
+
+    capacity = gl2_vertex_scratch_capacity ? gl2_vertex_scratch_capacity : 256;
+    while (capacity < vertex_count) {
+        if (capacity > SIZE_MAX / 2) {
+            capacity = vertex_count;
+            break;
+        }
+        capacity *= 2;
+    }
+    next = (WebGL2Vertex *)realloc(gl2_vertex_scratch,
+                                   capacity * sizeof(WebGL2Vertex));
+    if (!next)
+        return NULL;
+    gl2_vertex_scratch = next;
+    gl2_vertex_scratch_capacity = capacity;
+    return next;
+}
+
 static void mat_identity(float *m)
 {
     memset(m, 0, sizeof(float) * 16);
@@ -798,11 +837,10 @@ WEBGL2_WEAK void webgl2_glDrawElements(unsigned int mode, int count, unsigned in
         }
     }
 
-    verts = (WebGL2Vertex *)malloc((max_index + 1) * sizeof(WebGL2Vertex));
+    verts = reserve_compat_vertices((size_t)max_index + 1);
     legacy_indices = build_legacy_triangle_indices(mode, 0, count, type, indices, &legacy_count);
     index_copy = legacy_indices ? (void *)legacy_indices : malloc((size_t)count * index_type_size(type));
     if (!verts || !index_copy) {
-        free(verts);
         free(index_copy);
         return;
     }
@@ -825,7 +863,6 @@ WEBGL2_WEAK void webgl2_glDrawElements(unsigned int mode, int count, unsigned in
         glDrawElements(webgl_draw_mode(mode), count, type, 0);
     }
 
-    free(verts);
     free(index_copy);
 }
 
@@ -845,7 +882,7 @@ WEBGL2_WEAK void webgl2_glDrawArrays(unsigned int mode, int first, int count)
         return;
     }
 
-    verts = (WebGL2Vertex *)malloc((size_t)count * sizeof(WebGL2Vertex));
+    verts = reserve_compat_vertices((size_t)count);
     if (!verts)
         return;
 
@@ -866,7 +903,6 @@ WEBGL2_WEAK void webgl2_glDrawArrays(unsigned int mode, int first, int count)
         glDrawArrays(webgl_draw_mode(mode), 0, count);
     }
 
-    free(verts);
 }
 
 WEBGL2_WEAK void webgl2_glDrawRangeElements(unsigned int mode, unsigned int start, unsigned int end, int count, unsigned int type, const void *indices)
