@@ -4350,6 +4350,8 @@ void FS_Startup(const char *gameName)
 
     I_strncpyz(fs_gamedir, gameName, sizeof(fs_gamedir));
     FS_WebIndexIwds();
+    // Match native FS_Startup: load the user's saved key before connect runs.
+    Com_ReadCDKey();
 }
 
 /*

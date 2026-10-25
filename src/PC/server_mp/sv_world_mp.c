@@ -525,6 +525,13 @@ void SV_PointTraceToEntity(const pointtrace_t *clip, svEntity_t *check, trace_t 
     clipHandle_t clipHandle;
     const vec_t *angles;
     float oldFraction;
+    extern int Dvar_GetInt(const char *name);
+    int debugBullet = touch->client && clip->bLocational && Dvar_GetInt("g_debugBullets") == 6;
+    if (debugBullet && entityNum != clip->passEntityNum) {
+        Com_Printf("bullet candidate: entity=%d contents=%x flags=%x origin=(%.1f %.1f %.1f)\n",
+                   entityNum, touch->r.contents, touch->r.svFlags,
+                   touch->r.currentOrigin[0], touch->r.currentOrigin[1], touch->r.currentOrigin[2]);
+    }
 
     if ((touch->r.contents & contentmask) == 0) {
         return;
@@ -549,7 +556,7 @@ void SV_PointTraceToEntity(const pointtrace_t *clip, svEntity_t *check, trace_t 
             vec3_t origin;
             vec3_t absmin;
             vec3_t absmax;
-            float entAxis[3][3];
+            float entAxis[4][3];
             vec3_t localStart;
             vec3_t localEnd;
             DObjTrace objTrace;
@@ -589,6 +596,10 @@ void SV_PointTraceToEntity(const pointtrace_t *clip, svEntity_t *check, trace_t 
 
             G_DObjCalcPose(touch);
             AnglesToAxis(touch->r.currentAngles, entAxis);
+            // A 4x3 inverse transform also reads the translation row.
+            entAxis[3][0] = origin[0];
+            entAxis[3][1] = origin[1];
+            entAxis[3][2] = origin[2];
             MatrixTransposeTransformVector43(clip->extents.start, (const float *)entAxis, localStart);
             MatrixTransposeTransformVector43(clip->extents.end, (const float *)entAxis, localEnd);
 
@@ -597,6 +608,11 @@ void SV_PointTraceToEntity(const pointtrace_t *clip, svEntity_t *check, trace_t 
                 DObjGeomTraceline(obj, localStart, localEnd, contentmask, &objTrace);
             } else {
                 DObjTraceline(obj, localStart, localEnd, clip->priorityMap, &objTrace);
+            }
+            if (debugBullet) {
+                Com_Printf("bullet model: entity=%d fraction=%.5f localStart=(%.1f %.1f %.1f) localEnd=(%.1f %.1f %.1f)\n",
+                           entityNum, objTrace.fraction, localStart[0],localStart[1],localStart[2],
+                           localEnd[0],localEnd[1],localEnd[2]);
             }
 
             if (objTrace.fraction < trace->fraction) {
@@ -722,7 +738,7 @@ int SV_PointSightTraceToEntity(const sightpointtrace_t *clip, svEntity_t *check)
             vec3_t absmin;
             vec3_t absmax;
             TraceExtents extents;
-            float entAxis[3][3];
+            float entAxis[4][3];
             vec3_t localStart;
             vec3_t localEnd;
             DObjTrace objTrace;
@@ -751,6 +767,9 @@ int SV_PointSightTraceToEntity(const sightpointtrace_t *clip, svEntity_t *check)
 
             G_DObjCalcPose(touch);
             AnglesToAxis(touch->r.currentAngles, entAxis);
+            entAxis[3][0] = origin[0];
+            entAxis[3][1] = origin[1];
+            entAxis[3][2] = origin[2];
             MatrixTransposeTransformVector43(extents.start, (const float *)entAxis, localStart);
             MatrixTransposeTransformVector43(extents.end, (const float *)entAxis, localEnd);
 

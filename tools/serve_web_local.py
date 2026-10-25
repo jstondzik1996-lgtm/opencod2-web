@@ -207,7 +207,12 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_HEAD(self) -> None:
         self._head_only = True
-        self.do_GET()
+        try:
+            self.do_GET()
+        finally:
+            # BaseHTTPRequestHandler reuses this instance for HTTP/1.1
+            # keep-alive requests. A later GET must send its body.
+            self._head_only = False
 
     def do_GET(self) -> None:
         path = urllib.parse.urlsplit(self.path).path

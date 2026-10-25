@@ -113,7 +113,7 @@ extern qboolean BG_IsAimDownSightWeapon(int iWeapon);
 extern void BG_CalculateWeaponPosition_Sway(playerState_t *ps, vec_t *swayViewAngles, vec_t *swayOffset, vec_t *swayAngles, float ssSwayScale, int frametime);
 extern void BG_CalculateWeaponAngles(weaponState_t *ws, vec_t *angles);
 static const int iSlotPreferenceOrder[2];
-extern weapSlot_t (*s_barrelTags[4])[64];
+extern const unsigned short *s_barrelTags[4];
 
 COD2_ASSERT_FIELD(WeaponDef, szGunXModel,       0x0c);
 COD2_ASSERT_FIELD(WeaponDef, weapSlot,          0x80);

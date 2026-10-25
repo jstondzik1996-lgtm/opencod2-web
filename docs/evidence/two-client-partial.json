@@ -1,0 +1,459 @@
+{
+  "checks": {
+    "two_distinct_clients": true,
+    "both_spawned": true,
+    "both_move": true,
+    "both_fire": true,
+    "damage_to_other_player": false
+  },
+  "movements": [
+    {
+      "before": {
+        "ready": true,
+        "state": 8,
+        "client": 0,
+        "serverTime": 61082,
+        "snapshotTime": 61300,
+        "commandTime": 60764,
+        "pmType": 0,
+        "origin": [
+          1231.677,
+          2434.705,
+          68.032
+        ],
+        "velocity": [
+          0,
+          0,
+          0
+        ],
+        "weapon": 7,
+        "clip": 32,
+        "health": 100,
+        "keyCatchers": 0,
+        "psClient": 0,
+        "entities": 57,
+        "viewAngles": [
+          0,
+          149.7,
+          0
+        ],
+        "inputAngles": [
+          0,
+          0,
+          0
+        ],
+        "viewHeight": 60
+      },
+      "after": {
+        "ready": true,
+        "state": 8,
+        "client": 0,
+        "serverTime": 63499,
+        "snapshotTime": 63650,
+        "commandTime": 63190,
+        "pmType": 0,
+        "origin": [
+          970.689,
+          2586.128,
+          45.832
+        ],
+        "velocity": [
+          -52,
+          30,
+          0
+        ],
+        "weapon": 7,
+        "clip": 32,
+        "health": 100,
+        "keyCatchers": 0,
+        "psClient": 0,
+        "entities": 57,
+        "viewAngles": [
+          0,
+          149.7,
+          0
+        ],
+        "inputAngles": [
+          0,
+          0,
+          0
+        ],
+        "viewHeight": 60
+      }
+    },
+    {
+      "before": {
+        "ready": true,
+        "state": 8,
+        "client": 1,
+        "serverTime": 65959,
+        "snapshotTime": 66100,
+        "commandTime": 65669,
+        "pmType": 0,
+        "origin": [
+          468,
+          992,
+          119.125
+        ],
+        "velocity": [
+          0,
+          0,
+          0
+        ],
+        "weapon": 18,
+        "clip": 32,
+        "health": 100,
+        "keyCatchers": 0,
+        "psClient": 1,
+        "entities": 60,
+        "viewAngles": [
+          0,
+          179.698,
+          0
+        ],
+        "inputAngles": [
+          0,
+          0,
+          0
+        ],
+        "viewHeight": 60
+      },
+      "after": {
+        "ready": true,
+        "state": 8,
+        "client": 1,
+        "serverTime": 68337,
+        "snapshotTime": 68500,
+        "commandTime": 68033,
+        "pmType": 0,
+        "origin": [
+          369.016,
+          992.781,
+          119.125
+        ],
+        "velocity": [
+          0,
+          0,
+          0
+        ],
+        "weapon": 18,
+        "clip": 32,
+        "health": 100,
+        "keyCatchers": 0,
+        "psClient": 1,
+        "entities": 60,
+        "viewAngles": [
+          0,
+          179.698,
+          0
+        ],
+        "inputAngles": [
+          0,
+          0,
+          0
+        ],
+        "viewHeight": 60
+      }
+    }
+  ],
+  "fire": [
+    {
+      "before": {
+        "ready": true,
+        "state": 8,
+        "client": 0,
+        "serverTime": 63819,
+        "snapshotTime": 63950,
+        "commandTime": 63499,
+        "pmType": 0,
+        "origin": [
+          969.332,
+          2586.91,
+          45.838
+        ],
+        "velocity": [
+          0,
+          0,
+          0
+        ],
+        "weapon": 7,
+        "clip": 32,
+        "health": 100,
+        "keyCatchers": 0,
+        "psClient": 0,
+        "entities": 57,
+        "viewAngles": [
+          0,
+          149.7,
+          0
+        ],
+        "inputAngles": [
+          0,
+          0,
+          0
+        ],
+        "viewHeight": 60
+      },
+      "after": {
+        "ready": true,
+        "state": 8,
+        "client": 0,
+        "serverTime": 65813,
+        "snapshotTime": 66000,
+        "commandTime": 65506,
+        "pmType": 0,
+        "origin": [
+          969.332,
+          2586.91,
+          45.838
+        ],
+        "velocity": [
+          0,
+          0,
+          0
+        ],
+        "weapon": 7,
+        "clip": 26,
+        "health": 100,
+        "keyCatchers": 0,
+        "psClient": 0,
+        "entities": 57,
+        "viewAngles": [
+          0,
+          149.7,
+          0
+        ],
+        "inputAngles": [
+          0,
+          0,
+          0
+        ],
+        "viewHeight": 60
+      }
+    },
+    {
+      "before": {
+        "ready": true,
+        "state": 8,
+        "client": 1,
+        "serverTime": 68624,
+        "snapshotTime": 68750,
+        "commandTime": 68337,
+        "pmType": 0,
+        "origin": [
+          369.016,
+          992.781,
+          119.125
+        ],
+        "velocity": [
+          0,
+          0,
+          0
+        ],
+        "weapon": 18,
+        "clip": 32,
+        "health": 100,
+        "keyCatchers": 0,
+        "psClient": 1,
+        "entities": 60,
+        "viewAngles": [
+          0,
+          179.698,
+          0
+        ],
+        "inputAngles": [
+          0,
+          0,
+          0
+        ],
+        "viewHeight": 60
+      },
+      "after": {
+        "ready": true,
+        "state": 8,
+        "client": 1,
+        "serverTime": 70570,
+        "snapshotTime": 70750,
+        "commandTime": 70273,
+        "pmType": 0,
+        "origin": [
+          369.016,
+          992.781,
+          119.125
+        ],
+        "velocity": [
+          0,
+          0,
+          0
+        ],
+        "weapon": 18,
+        "clip": 26,
+        "health": 100,
+        "keyCatchers": 0,
+        "psClient": 1,
+        "entities": 60,
+        "viewAngles": [
+          0,
+          179.698,
+          0
+        ],
+        "inputAngles": [
+          0,
+          0,
+          0
+        ],
+        "viewHeight": 60
+      }
+    }
+  ],
+  "duel": {
+    "before": [
+      {
+        "ready": true,
+        "state": 8,
+        "client": 0,
+        "serverTime": 73767,
+        "snapshotTime": 73800,
+        "commandTime": 73436,
+        "pmType": 0,
+        "origin": [
+          1231.57,
+          2434.784,
+          67.99
+        ],
+        "velocity": [
+          0,
+          0,
+          0
+        ],
+        "weapon": 7,
+        "clip": 26,
+        "health": 100,
+        "keyCatchers": 0,
+        "psClient": 0,
+        "entities": 57,
+        "viewAngles": [
+          25.878,
+          148.563,
+          0
+        ],
+        "inputAngles": [
+          25.879,
+          148.563,
+          0
+        ],
+        "viewHeight": 60
+      },
+      {
+        "ready": true,
+        "state": 8,
+        "client": 1,
+        "serverTime": 73710,
+        "snapshotTime": 73850,
+        "commandTime": 73328,
+        "pmType": 0,
+        "origin": [
+          1149.548,
+          2484.922,
+          46.354
+        ],
+        "velocity": [
+          0,
+          0,
+          0
+        ],
+        "weapon": 18,
+        "clip": 26,
+        "health": 100,
+        "keyCatchers": 0,
+        "psClient": 1,
+        "entities": 57,
+        "viewAngles": [
+          0,
+          0,
+          0
+        ],
+        "inputAngles": [
+          0,
+          0,
+          0
+        ],
+        "viewHeight": 60
+      }
+    ],
+    "after": [
+      {
+        "ready": true,
+        "state": 8,
+        "client": 0,
+        "serverTime": 76397,
+        "snapshotTime": 76500,
+        "commandTime": 76084,
+        "pmType": 0,
+        "origin": [
+          1231.57,
+          2434.784,
+          67.99
+        ],
+        "velocity": [
+          0,
+          0,
+          0
+        ],
+        "weapon": 7,
+        "clip": 15,
+        "health": 100,
+        "keyCatchers": 0,
+        "psClient": 0,
+        "entities": 57,
+        "viewAngles": [
+          25.878,
+          148.563,
+          0
+        ],
+        "inputAngles": [
+          25.879,
+          148.563,
+          0
+        ],
+        "viewHeight": 60
+      },
+      {
+        "ready": true,
+        "state": 8,
+        "client": 1,
+        "serverTime": 76361,
+        "snapshotTime": 76450,
+        "commandTime": 75894,
+        "pmType": 0,
+        "origin": [
+          1149.548,
+          2484.922,
+          46.354
+        ],
+        "velocity": [
+          0,
+          0,
+          0
+        ],
+        "weapon": 18,
+        "clip": 26,
+        "health": 100,
+        "keyCatchers": 0,
+        "psClient": 1,
+        "entities": 57,
+        "viewAngles": [
+          0,
+          0,
+          0
+        ],
+        "inputAngles": [
+          0,
+          0,
+          0
+        ],
+        "viewHeight": 60
+      }
+    ]
+  }
+}

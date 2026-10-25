@@ -159,6 +159,11 @@ void Sys_Error(const char *error, ...)
     vsnprintf(text, sizeof(text), error, argptr);
     va_end(argptr);
 
+#ifdef __EMSCRIPTEN__
+    /* Renderer cleanup can itself fail after partial initialization. Preserve
+     * the original reason before attempting that cleanup. */
+    fprintf(stderr, "Sys_Error: %s\n", text);
+#endif
     Sys_DestroySplashWindow();
     timeEndPeriod(1);
     IN_Shutdown();
@@ -172,7 +177,6 @@ void Sys_Error(const char *error, ...)
 
 #ifdef __EMSCRIPTEN__
     /* Avoid infinite Com_Quit_f / exit() — that yields black canvas + unreachable. */
-    fprintf(stderr, "Sys_Error: %s\n", text);
     emscripten_cancel_main_loop();
     /*
      * PROXY_TO_PTHREAD: UI hooks live on the browser Module. Copy to a static

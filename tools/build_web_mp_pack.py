@@ -84,16 +84,11 @@ def should_keep(path: str) -> bool:
             return True
         return False
 
-    # SP mission .str / leftover SP-named assets in localized packs.
-    #
-    # images/ is exempt: textures (skyboxes especially) are frequently reused
-    # across SP missions and MP bonus maps that share the same setting (e.g.
-    # mp_burgundy's skybox is images/rhine_ft.iwi, borrowed from the SP
-    # "rhine" mission — the token match below would otherwise strip it and
-    # break mp_burgundy with "ERROR: image 'images/rhine_ft.iwi' is missing").
-    # Textures are cheap (a few KB-MB each); the token filter's real payoff
-    # is on bulkier localized VO/string content, not images.
-    if not p.startswith("images/") and _has_sp_token(p):
+    # Mission names also occur in shared MP materials, models, animations and
+    # sound aliases (e.g. materials/toujane_brick2). Only apply the name
+    # heuristic to campaign strings; asset dependencies cannot be inferred
+    # from their names. Campaign maps/video/dialogue were filtered above.
+    if p.startswith("localizedstrings/") and _has_sp_token(p):
         return False
 
     return True
@@ -180,7 +175,14 @@ def iter_kept_members(paths: Iterable[str]):
     seen: set[str] = set()
     skipped = 0
     dupes = 0
-    for path in paths:
+    # The engine searches base IWDs before localized IWDs, and higher names
+    # before lower names within either group. Resolve duplicates in that same
+    # order so iw_15's 1.3 scripts replace the older copies in iw_07.
+    def precedence(path: str):
+        name = os.path.basename(path).lower()
+        return (not name.startswith("localized_"), name)
+
+    for path in sorted(paths, key=precedence, reverse=True):
         print(f"scanning {os.path.basename(path)} …", flush=True)
         try:
             zf = zipfile.ZipFile(path)

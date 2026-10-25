@@ -1529,12 +1529,14 @@ static void VM_NotifyTerminatePausedStack(unsigned int selfId, unsigned int star
     VariableStackBuffer *stackValue;
 
     Scr_ClearWaitTime(startLocalId);
-    id = FindObject(FindVariable(varPub->pauseArrayId, time));
+    // A time-waiting thread's archived stack belongs to the time queue.
+    // pauseArrayId is indexed by entity/self IDs for notify waits, not time.
+    id = FindObject(FindVariable(varPub->timeArrayId, time));
     stackValue = GetVariableValueAddress(FindObjectVariable(id, startLocalId))->stackValue;
     RemoveObjectVariable(id, startLocalId);
 
     if (!GetArraySize(id) && time != (unsigned int)varPub->time) {
-        RemoveVariable(varPub->pauseArrayId, time);
+        RemoveVariable(varPub->timeArrayId, time);
     }
 
     VM_TerminateStack(selfId, startLocalId, stackValue);

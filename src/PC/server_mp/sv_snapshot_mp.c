@@ -42,7 +42,6 @@ extern byte *sv_fps_dvar;
 #define CLIENT_CMDENTRY_SIZE 0x408
 #define CLIENT_CMDENTRY_STROFF 0x400
 #define CLIENT_CMDENTRY_MASK 0x7f
-#define CLIENT_STRIDE 0x78f0c
 #define CLIENT_NETCHAN_SENDFRAG 0x725dc
 #define CLIENT_NETCHAN_SENDLEN 0x725e4
 #define CLIENT_NETCHAN_SENDSTART 0x725e0
@@ -1286,7 +1285,7 @@ static byte *SV_CachedClientLocal(serverStatic_t *svs, int index)
 static int SV_ClientIndexLocal(client_t *client)
 {
     serverStatic_t *svs = (serverStatic_t *)imp_svs;
-    return (int)(((byte *)client - (byte *)svs->clients) / CLIENT_STRIDE);
+    return (int)(client - svs->clients);
 }
 
 static int SV_DvarIntLocal(byte *dvarStorage)
@@ -1448,7 +1447,7 @@ static void SV_CopyCurrentClientsToSnapshotLocal(clientSnapshot_t *frame)
     int clientNum;
 
     for (clientNum = 0; clientNum < maxClients; ++clientNum) {
-        client_t *client = (client_t *)((byte *)svs->clients + clientNum * CLIENT_STRIDE);
+        client_t *client = &svs->clients[clientNum];
         clientState_t *dst;
         clientState_t *src;
         if (client->state <= 1) {

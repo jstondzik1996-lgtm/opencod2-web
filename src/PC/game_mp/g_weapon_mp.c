@@ -368,6 +368,11 @@ static void Bullet_Fire_Extended(const gentity_t *source, gentity_s (*attacker)[
         dflags |= 2;
 
     G_LocationalTrace(&tr, start, end, source->s.number, 0x2802831, priorityMap);
+    if (Dvar_GetInt("g_debugBullets") == 6) {
+        Com_Printf("bullet trace: source=%d hit=%d fraction=%.5f start=(%.1f %.1f %.1f) end=(%.1f %.1f %.1f)\n",
+                   source->s.number, tr.entityNum, tr.fraction,
+                   start[0], start[1], start[2], end[0], end[1], end[2]);
+    }
 
     endpos[0] = start[0] + (end[0] - start[0]) * tr.fraction;
     endpos[1] = start[1] + (end[1] - start[1]) * tr.fraction;

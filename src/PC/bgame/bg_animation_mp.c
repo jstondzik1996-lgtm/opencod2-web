@@ -44,7 +44,7 @@ static char input[100000];
 static qboolean bScriptFileLoaded;
 extern animStringItem_t weaponStrings[];
 extern const dvar_t *bg_swingSpeed;
-extern void *(*controller_names[6])();
+extern const unsigned short *controller_names[6];
 
 extern void Com_Error(int code, const char *fmt, ...);
 extern void Com_Printf(const char *fmt, ...);
@@ -353,7 +353,7 @@ static inline __attribute__((always_inline)) void BG_SmoothControllerAngles(vec3
 
 static inline __attribute__((always_inline)) unsigned int BG_ControllerTagName(int controllerIndex)
 {
-    return *(const unsigned short *)controller_names[controllerIndex];
+    return *controller_names[controllerIndex];
 }
 
 void BG_Player_DoControllers(const struct DObj_s *pDObj, const entityState_t *es, int *partBits, clientInfo_t *ci, int frametime)

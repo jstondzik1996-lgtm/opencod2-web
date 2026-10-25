@@ -73,6 +73,8 @@ void glDrawElements(void) {}
 void glEnable(void) {}
 void glEnableClientState(void) {}
 void glFogfv(void) {}
+void glFogf(unsigned int pname, float param) { (void)pname; (void)param; }
+void glFogi(unsigned int pname, int param) { (void)pname; (void)param; }
 void glGenFencesAPPLE(void) {}
 void glGenProgramsARB(void) {}
 void glGenTextures(void) {}

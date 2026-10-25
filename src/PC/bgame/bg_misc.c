@@ -14,7 +14,7 @@ extern const dvar_t *bg_fallDamageMinHeight;
 extern const dvar_t *bg_fallDamageMaxHeight;
 extern const dvar_t *inertiaMax;
 extern const dvar_t *inertiaDebug;
-extern const dvar_t *bg_pmoveDebug;
+const dvar_t *bg_pmoveDebug;
 extern const dvar_t *inertiaAngle;
 extern const dvar_t *friction;
 extern const dvar_t *stopspeed;

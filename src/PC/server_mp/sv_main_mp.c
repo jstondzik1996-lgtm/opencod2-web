@@ -1,5 +1,8 @@
 #include "common_types.h"
 #include "imports.h"
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
 #include "cod2_feature_config.h"
 #include "pb_public.h"
 #include "PC/qcommon/net_hardening.h"
@@ -74,7 +77,11 @@ __asm__(".Lsvpkt_fmt: .asciz \"\"\n");
 int SvDbgGuardHits;
 void SvDbgGuard(const char *where)
 {
-    unsigned int word = *(volatile unsigned int *)0;
+    // Inspect the runtime's cookie from JS. A C null dereference is undefined
+    // and triggers SAFE_HEAP before it can diagnose any real corruption.
+    unsigned int word = (unsigned int)EM_ASM_INT({
+        return new DataView(HEAPU8.buffer).getUint32(0, true);
+    });
     if (word != 0x63736D65u) {
         if (SvDbgGuardHits++ < 6)
             Com_Printf("[svdbg] GUARD CORRUPTED after: %s (word=0x%08x)\n",

@@ -54,6 +54,8 @@ if(EMSCRIPTEN)
 # ----------------------------------------------------------------------------
 option(COD2_WEB_WASMFS  "OPFS-backed WASMFS variant (-pthread; needs COOP/COEP)" OFF)
 option(COD2_WEB_WORKERFS "True zero-copy WORKERFS variant (-pthread; needs COOP/COEP)" OFF)
+option(COD2_WEB_SAFE_HEAP "Check WASM memory accesses while diagnosing runtime faults" OFF)
+option(COD2_WEB_TESTING "Export command and dvar access for local integration tests" OFF)
 
 set(WEB_GEN ${CMAKE_SOURCE_DIR}/build/web_gen)
 
@@ -103,6 +105,14 @@ set(WEB_LINK
   -Wl,--allow-multiple-definition
   -Wl,--allow-undefined
   -Wl,--no-fatal-warnings)
+if(COD2_WEB_SAFE_HEAP)
+  # The original x86 layouts include unaligned accesses, valid in WASM.
+  list(APPEND WEB_LINK -sSAFE_HEAP=2 -sSTACK_OVERFLOW_CHECK=2)
+endif()
+if(COD2_WEB_TESTING)
+  list(APPEND WEB_LINK -sEXPORTED_FUNCTIONS=_main,_Cbuf_AddText,_Dvar_GetVariantString,_CL_GetLocalClientActiveCount)
+  target_sources(cod2 PRIVATE src/web/web_test.c)
+endif()
 if(COD2_WEB_WASMFS)
   # OPFS ProxyWorker cannot start on the browser main thread. Run main() on a
   # worker via PROXY_TO_PTHREAD. Prefer OFFSCREEN_FRAMEBUFFER (proxy present to
@@ -233,7 +243,11 @@ set_source_files_properties(src/PC/qcommon/crash_handler.c PROPERTIES
   COMPILE_DEFINITIONS "COD2_GIT_HASH=\"${COD2_GIT_HASH}\"")
 
 add_executable(${W32_EXE} ${WIN_C} ${WIN_ASM_GEN})
-target_link_options(${W32_EXE} PRIVATE ${COD2_WIN_LINK})
+# The reconstructed symbol aliases exceed Windows' command-line limit. Put
+# driver options in a response file as well as the object list emitted by Ninja.
+string(REPLACE ";" "\n" COD2_WIN_LINK_RESPONSE "${COD2_WIN_LINK}")
+file(WRITE "${CMAKE_BINARY_DIR}/cod2-win-link.rsp" "${COD2_WIN_LINK_RESPONSE}\n")
+target_link_options(${W32_EXE} PRIVATE "@${CMAKE_BINARY_DIR}/cod2-win-link.rsp")
 target_link_libraries(${W32_EXE} PRIVATE ${COD2_WIN_LIBS})
 set_target_properties(${W32_EXE} PROPERTIES
   RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR} SUFFIX ".exe")

@@ -8,6 +8,8 @@
 extern PlayerKeyState playerKeys[1];
 extern unsigned char bg_itemlist[];
 extern const char str_002157b8[];
+extern const char str_002b51bc[], str_002b51d0[];
+extern const char str_002b576c[], str_002b5778[], str_002b5788[], str_002b5794[];
 
 /*
  * literals.S "Missing global variables" — web build does not link that .S.
@@ -207,6 +209,27 @@ static void Web_InitWasmAliases(void)
 {
     keys = playerKeys[0].keys;
     Web_FixBgItemlistRelocs();
+    /* Restore data-pointer relocations from build/win_gen/data.win.S. Leaving
+     * these zero crashes on the first grenade HUD or visible player model. */
+    {
+        extern unsigned char controller_names[44], offhandStrings[32], hintStrings[32], s_barrelTags[32];
+        uintptr_t *controllers = (uintptr_t *)controller_names;
+        uintptr_t *barrels = (uintptr_t *)s_barrelTags;
+        const char **offhand = (const char **)offhandStrings;
+        const char **hints = (const char **)hintStrings;
+        for (int i = 0; i < 6; ++i)
+            controllers[i] = (uintptr_t)imp_scr_const + 168 + i * 2;
+        for (int i = 0; i < 4; ++i)
+            barrels[i] = (uintptr_t)imp_scr_const + 140 + i * 2;
+        offhand[0] = str_002157b8;
+        offhand[1] = str_002b51bc;
+        offhand[2] = str_002b51d0;
+        hints[0] = str_002157b8;
+        hints[1] = str_002b576c;
+        hints[2] = str_002b5778;
+        hints[3] = str_002b5788;
+        hints[4] = str_002b5794;
+    }
 
     /*
      * build/web_gen/data.c cannot express `.long <symbol>` relocations from
