@@ -41,9 +41,18 @@ if(NOT COD2_GIT_HASH)
 endif()
 
 # Common warning-demotions used on every toolchain (reconstructed C trips these).
-set(COD2_WNO
-  -Wno-error=incompatible-pointer-types -Wno-error=implicit-function-declaration
-  -Wno-error=implicit-int -Wno-error=int-conversion -Wno-error=return-mismatch)
+# Only flags the compiler knows: -Wreturn-mismatch exists from GCC 14 / recent
+# clang, and an unknown -Wno-error=<x> is a hard error (e.g. Ubuntu MinGW GCC 13).
+include(CheckCCompilerFlag)
+set(COD2_WNO)
+foreach(_cod2_w incompatible-pointer-types implicit-function-declaration implicit-int
+                int-conversion return-mismatch)
+  string(MAKE_C_IDENTIFIER "COD2_HAS_W_${_cod2_w}" _cod2_var)
+  check_c_compiler_flag("-Werror=${_cod2_w}" ${_cod2_var})
+  if(${_cod2_var})
+    list(APPEND COD2_WNO -Wno-error=${_cod2_w})
+  endif()
+endforeach()
 
 set(COD2_SRC_DIR ${CMAKE_SOURCE_DIR}/src)
 

@@ -76,6 +76,25 @@ MIME_EXTRA = {
 
 # Shared with the Handler via serve() assignment.
 CFG: dict = {}
+
+# Private asset access (stage 2 test setups). Original game archives must not
+# be served to anyone who merely knows the URL: with --access-key, the asset
+# manifest, game archives and anything under main/ or zone/ require a cookie
+# that a tester gets by opening the page once with ?access=<key>.
+ACCESS_COOKIE = "cod2_access"
+PROTECTED_EXT = (".iwd", ".pk3", ".bik", ".roq", ".str", ".ff")
+
+
+def _access_token(key: str) -> str:
+    import hashlib
+    import hmac
+    return hmac.new(key.encode("utf-8"), b"cod2web-asset-access", hashlib.sha256).hexdigest()
+
+
+def is_protected_asset(path: str) -> bool:
+    p = urllib.parse.unquote(path).replace("\\", "/").lstrip("/").lower()
+    return (p == "assets.json" or p.endswith("/assets.json") or p.startswith("main/")
+            or p.startswith("zone/") or p.endswith(PROTECTED_EXT))
 _CHILDREN: list[subprocess.Popen] = []
 
 
@@ -230,8 +249,51 @@ class Handler(BaseHTTPRequestHandler):
             # keep-alive requests. A later GET must send its body.
             self._head_only = False
 
+    def _has_access(self) -> bool:
+        key = CFG.get("access_key")
+        if not key:
+            return True
+        import hmac
+        want = _access_token(key)
+        for part in (self.headers.get("Cookie") or "").split(";"):
+            name, _, value = part.strip().partition("=")
+            if name == ACCESS_COOKIE and hmac.compare_digest(value, want):
+                return True
+        return False
+
+    def _grant_access(self) -> bool:
+        """?access=<key> on any page sets the cookie and redirects without it."""
+        key = CFG.get("access_key")
+        if not key:
+            return False
+        parts = urllib.parse.urlsplit(self.path)
+        params = urllib.parse.parse_qsl(parts.query, keep_blank_values=True)
+        given = [v for k, v in params if k == "access"]
+        if not given:
+            return False
+        import hmac
+        if not hmac.compare_digest(given[0].encode("utf-8"), key.encode("utf-8")):
+            self._send_bytes(403, b'{"error":"bad_access_key"}\n', "application/json")
+            return True
+        rest = urllib.parse.urlencode([(k, v) for k, v in params if k != "access"])
+        location = parts.path + ("?" + rest if rest else "")
+        self.send_response(302)
+        self.send_header("Location", location or "/")
+        self.send_header("Set-Cookie", "%s=%s; Path=/; HttpOnly; SameSite=Strict; Max-Age=2592000"
+                         % (ACCESS_COOKIE, _access_token(key)))
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+        return True
+
     def do_GET(self) -> None:
         path = urllib.parse.urlsplit(self.path).path
+        if self._grant_access():
+            return
+        if is_protected_asset(path) and not self._has_access():
+            self.close_connection = True
+            self._send_bytes(403, b'{"error":"private_assets","hint":"open the page with ?access=<key>"}\n',
+                             "application/json")
+            return
         if path == "/play/api/dev-status":
             self._dev_status()
             return
@@ -474,6 +536,8 @@ def main() -> None:
     parser.add_argument("--relay-port", type=int, default=DEFAULT_RELAY_PORT)
     parser.add_argument("--servers", default=os.environ.get("COD2_SERVERS_FILE"),
                         help="project server directory JSON for the spawned master proxy")
+    parser.add_argument("--access-key", default=os.environ.get("COD2_ACCESS_KEY"),
+                        help="private test setup: game assets need ?access=<key> once (cookie)")
     parser.add_argument("--sessions", action="store_true",
                         help="require player sessions/join tickets (generates COD2_SESSION_SECRET if unset)")
     parser.add_argument("--no-spawn", action="store_true",
@@ -488,7 +552,14 @@ def main() -> None:
         "master_port": args.master_port,
         "relay_port": args.relay_port,
         "coop": bool(args.coop or os.environ.get("COD2_LOCAL_COOP")),
+        "access_key": args.access_key or None,
     })
+    if args.access_key and len(args.access_key) < 12:
+        raise SystemExit("--access-key must be at least 12 characters")
+    if args.bind not in ("127.0.0.1", "localhost", "::1") and not args.access_key:
+        print("WARNING: serving on %s without --access-key; anyone who can reach it can download "
+              "the game archives under build/web/main. Use --access-key for shared test hosts."
+              % args.bind, flush=True)
 
     if not args.no_spawn:
         spawn_backends(args.master_port, args.relay_port, args.servers, args.sessions)

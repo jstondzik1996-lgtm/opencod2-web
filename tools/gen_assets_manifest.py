@@ -38,7 +38,11 @@ def scan(root: str) -> list[dict]:
                     continue
                 full = os.path.join(dirpath, name)
                 rel = os.path.relpath(full, root).replace("\\", "/")
-                files.append({"path": rel, "size": os.path.getsize(full)})
+                st = os.stat(full)
+                # Cache key for the browser: a replaced archive with the same
+                # size still gets downloaded again.
+                files.append({"path": rel, "size": st.st_size,
+                              "version": "%x-%x" % (st.st_size, int(st.st_mtime))})
     files.sort(key=lambda r: r["path"])
     return files
 

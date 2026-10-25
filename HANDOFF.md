@@ -41,6 +41,10 @@ Model: project dedicated servers run in the original game's LAN mode (`net_lanau
 - Relay limits: `COD2_RELAY_SEND_QUEUE` (256), `COD2_RELAY_UP_PPS` (250), `COD2_RELAY_MAX_PER_IP` (4). Session close logs dropped packet counts, useful in load tests.
 - Load test plan (pending, needs real clients): 4 -> 8 -> 16 -> 32 players on one instance; record server CPU, relay CPU, bandwidth, the relay's dropped counts, snapshot gaps (`Web_TestClientState.snapshotTime`) and client FPS. Do not claim 32 players before this passes.
 
+## Stage 2: website without local install
+
+Architecture, replacement packs and the private-test rules are in `docs/STAGE2_DELIVERY.md`. Short version: archives come from our host into browser storage (versioned cache), protected by `--access-key` on shared test hosts; public launch only after rights to every distributed file; individual files can be swapped with `tools/build_overlay_pack.py`.
+
 ## Current blocker and next experiment (history)
 
 Player bullets hit world entity 1022 and did not damage the second player. Claude (2026-10-25, commit after 774cd3a) analysed and applied the paired fix:

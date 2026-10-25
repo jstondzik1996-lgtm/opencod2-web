@@ -70,4 +70,13 @@ Upstream baseline: `c301dd6e8550c59a3fdd3081c73dc4ffd2c8602c`.
 - Tests: `tools/test_server_fleet.py` (fake dedicated server process: directory file, both instances online, crash -> restart -> online, argument guards; 20 parallel HTTP Quick Play requests never exceed 7 free slots), `tools/test_relay_session.py` (real relay_handler with fake WebSocket + UDP echo: order, slow-browser drops, rate limit, per-IP limit, header trust). 41 Python tests OK.
 - CI: MinGW i686 server job FAILED on run 40227512003 (compile step). Full log is not reachable from the cloud session (blob storage blocked), so the step now emits the first error lines as annotations. Investigating next; may be a toolchain difference (Ubuntu MinGW GCC 13 vs w64devkit GCC 16 used locally).
 
+## 2026-10-25 — Claude: stage 2 delivery pieces, CI MinGW fix
+
+- CI MinGW failure root cause (from annotations): Ubuntu's MinGW GCC 13 rejects `-Wno-error=return-mismatch` (GCC 14+ flag). Not a code error. CMake now adds each `-Wno-error=` flag only if the compiler supports it (checked locally with GCC 13 and clang).
+- Stage 2 (play without a local install), see `docs/STAGE2_DELIVERY.md`:
+  - `serve_web_local.py --access-key`: assets.json / main/ / zone/ / archives need a cookie obtained once via `?access=<key>`; launcher stays public; warning when bound publicly without a key.
+  - Manifest per-file `version`; `cod2_fs.js` skips a cached archive only if size AND version match (a replaced same-size archive is fetched again).
+  - `tools/build_overlay_pack.py`: zz_ overlay IWD to replace individual files with licensed equivalents, with an override report (bug found by the test and fixed: the overlay indexed itself when written into the base folder).
+- Tests: `tools/test_stage2_delivery.py` (access key, overlay report, real cod2_fs.js in Chromium/OPFS: unchanged archives cached, replaced one re-downloaded). 45 Python tests OK.
+
 See `HANDOFF.md` for exact endpoints, build steps, limitations and next work. This checkpoint does not establish working combat.

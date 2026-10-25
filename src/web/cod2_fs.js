@@ -273,7 +273,7 @@
   Cod2Fs.isWantedFile = isWantedFile;
 
   // ---- Remote HTTP assets (VPS / CDN) ------------------------------------
-  // Manifest shape: { baseUrl?: string, files: [{ path, size }] }
+  // Manifest shape: { baseUrl?: string, files: [{ path, size, version? }] }
   // Paths are relative to baseUrl (default: same origin "/").
   // Example path: "main/iw_00.iwd"
 
@@ -302,6 +302,18 @@
     for (i = 0; i < files.length; i++) bytesTotal += (files[i].size | 0);
 
     var meta = { ready: false, files: new Array(files.length), source: 'remote', baseUrl: baseUrl };
+    /* Versions of what is already cached, so a replaced archive of the same
+     * size is downloaded again (manifest "version", optional). */
+    var cachedVersion = Object.create(null);
+    try {
+      var oldMeta = await idbGet(KEY_CACHE_META);
+      if (oldMeta && oldMeta.files) {
+        for (i = 0; i < oldMeta.files.length; i++) {
+          var of = oldMeta.files[i];
+          if (of && of.path && of.version) cachedVersion[of.path] = of.version;
+        }
+      }
+    } catch (e) { /* no previous cache */ }
     var nextIndex = 0;
     var finishedCount = 0;
     var finishedBytes = 0;
@@ -362,17 +374,18 @@
       var rec = files[idx];
       var rel = String(rec.path || '');
       var size = rec.size | 0;
+      var version = rec.version ? String(rec.version) : '';
       var skip = false;
       try {
         var existing = await opfsFileHandle(base, rel, false);
         var ef = await existing.getFile();
-        if (size > 0 && ef.size === size) skip = true;
+        if (size > 0 && ef.size === size && (!version || cachedVersion[rel] === version)) skip = true;
       } catch (err) { /* missing */ }
 
       if (skip) {
         finishedCount++;
         finishedBytes += size;
-        meta.files[idx] = { path: rel, size: size };
+        meta.files[idx] = { path: rel, size: size, version: version };
         report('skip', rel);
         return;
       }
@@ -389,7 +402,7 @@
       }
       finishedCount++;
       finishedBytes += written;
-      meta.files[idx] = { path: rel, size: written };
+      meta.files[idx] = { path: rel, size: written, version: version };
       report('progress', rel);
     }
 
