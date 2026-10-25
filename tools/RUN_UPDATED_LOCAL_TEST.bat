@@ -128,7 +128,8 @@ set "QAWEB=%WORK%qa-build-web-%QA_SHA:~0,10%-%COD2_QA_SUFFIX%"
 set "QANATIVE=%WORK%qa-build-win32-%QA_SHA:~0,10%"
 
 echo.
-echo [2/5] Loading existing emsdk and compiler...\necho [CoD2 QA] Browser build: %COD2_QA_SUFFIX% / SAFE_HEAP=%COD2_QA_SAFE_HEAP%
+echo [2/5] Loading existing emsdk and compiler...
+echo [CoD2 QA] Browser build: %COD2_QA_SUFFIX% / SAFE_HEAP=%COD2_QA_SAFE_HEAP%
 set "PATH=%WORK%w64devkit\bin;%PATH%"
 call "%WORK%emsdk\emsdk_env.bat" >nul
 if errorlevel 1 goto :fail
