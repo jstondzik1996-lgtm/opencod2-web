@@ -205,7 +205,10 @@ class DirectoryTests(unittest.TestCase):
         self.assertIsNotNone(d.matchmake())
         self.assertIsNone(d.matchmake())
         self.clock.now += 31
-        self.assertIsNotNone(d.matchmake(), 'expired reservations free the slot')
+        # A reservation expires at 30s, but the server heartbeat expires at
+        # 10s; refresh its status before testing that the slot is reusable.
+        d.poll_once()
+        self.assertIsNotNone(d.matchmake(), 'expired reservations free the slot after fresh status')
 
     def test_concurrent_matchmake_never_exceeds_capacity(self):
         a = self.fake(players=0, maxclients=4)
