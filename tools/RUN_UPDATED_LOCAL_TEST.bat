@@ -43,8 +43,14 @@ if not exist "%WORK%emsdk\emsdk_env.bat" (
   goto :fail
 )
 if not exist "%PYTHON%" set "PYTHON=python"
-where git >nul 2>nul || (echo ERROR: git.exe missing & goto :fail)
-where cmake >nul 2>nul || (echo ERROR: cmake.exe missing & goto :fail)
+rem Check Git first. The original BAT's where/git || (...) condition carried on
+rem after the error; never treat "missing git" as a branch error again.
+call :ensure_git
+if errorlevel 1 goto :fail
+
+rem CMake and Ninja may also be installed outside the current PowerShell PATH.
+call :ensure_build_tools
+if errorlevel 1 goto :fail
 if not exist "%WORK%w64devkit\bin\gcc.exe" (
   echo ERROR: Existing w64devkit compiler is missing.
   goto :fail
@@ -59,25 +65,44 @@ if defined DIRTY (
   goto :fail
 )
 set "CURRENT="
-for /f "usebackq delims=" %%x in (`git -C "%REPO%" branch --show-current`) do set "CURRENT=%%x"
-if /I not "%CURRENT%"=="%BRANCH%" (
-  echo ERROR: Repository branch is "%CURRENT%", expected "%BRANCH%".
-  echo Refusing to switch branches automatically.
-  goto :fail
-)
+for /f "delims=" %%x in ('git -C "%REPO%" branch --show-current') do set "CURRENT=%%x"
 
 echo [1/5] Updating existing repo without overwriting local work...
-git -C "%REPO%" pull --ff-only origin "%BRANCH%"
+rem Fetch only changes metadata and downloaded objects, not local tracked files.
+git -C "%REPO%" fetch origin "%BRANCH%"
 if errorlevel 1 goto :fail
+if /I not "%CURRENT%"=="%BRANCH%" (
+  echo [CoD2 QA] Switching existing checkout from "%CURRENT%" to "%BRANCH%"...
+  git -C "%REPO%" switch "%BRANCH%"
+  if errorlevel 1 (
+    echo ERROR: Could not safely switch existing checkout. No reset was run.
+    goto :fail
+  )
+)
+git -C "%REPO%" merge --ff-only "origin/%BRANCH%"
+if errorlevel 1 (
+  echo ERROR: Branch has diverged; refusing to overwrite local commits.
+  goto :fail
+)
 
 echo [2/5] Preparing existing SDK...
 set "PATH=%WORK%w64devkit\bin;%PATH%"
 call "%WORK%emsdk\emsdk_env.bat" >nul
 if errorlevel 1 goto :fail
+where cmake >nul 2>nul
+if errorlevel 1 (
+  echo ERROR: cmake.exe is not installed or available on PATH.
+  goto :fail
+)
+where ninja >nul 2>nul
+if errorlevel 1 (
+  echo ERROR: ninja.exe missing; check w64devkit / portable SDK.
+  goto :fail
+)
 
 echo [3/5] Building separate WASM and Win32 QA targets...
 pushd "%REPO%"
-call emcmake cmake -S . -B build/qa-web -G Ninja -DCMAKE_OBJECT_PATH_MAX=200 -DCOD2_WEB_SAFE_HEAP=OFF -DCOD2_WEB_TESTING=ON
+call emcmake cmake -S . -B build/qa-web -G Ninja -DCMAKE_OBJECT_PATH_MAX=200 -DCOD2_WEB_SAFE_HEAP=ON -DCOD2_WEB_TESTING=ON
 if errorlevel 1 (popd & goto :fail)
 cmake --build build/qa-web -j 6
 if errorlevel 1 (popd & goto :fail)
@@ -101,6 +126,10 @@ if exist "%REPO%\build\web\assets.json" (
 )
 if not exist "%QAWEB%\assets.json" (
   echo WARNING: No assets.json manifest. Web page may require selecting local files.
+)
+if exist "%REPO%\build\web\zone" if not exist "%QAWEB%\zone" (
+  mklink /J "%QAWEB%\zone" "%REPO%\build\web\zone"
+  if errorlevel 1 echo WARNING: Could not link optional zone assets.
 )
 if not exist "%QAHOME%\main" mkdir "%QAHOME%\main"
 
@@ -128,3 +157,66 @@ echo UPDATE / BUILD FAILED. Existing previews were not intentionally stopped.
 echo Check the error above, do NOT delete the work folder or game assets.
 pause
 exit /b 1
+
+rem --------------------------------------------------------------------------
+rem Git bootstrap: do not require admin rights or a machine-wide installation.
+rem The fallback is the official Git for Windows MinGit v2.56.0(3) x64 archive,
+rem with its published SHA256 checked before unpacking. (~40 MB download)
+rem --------------------------------------------------------------------------
+:ensure_git
+where git >nul 2>nul
+if not errorlevel 1 (
+  git --version
+  exit /b 0
+)
+if exist "%ProgramFiles%\Git\cmd\git.exe" set "PATH=%ProgramFiles%\Git\cmd;%PATH%"
+if exist "%LOCALAPPDATA%\Programs\Git\cmd\git.exe" set "PATH=%LOCALAPPDATA%\Programs\Git\cmd;%PATH%"
+if exist "%WORK%emsdk\git\cmd\git.exe" set "PATH=%WORK%emsdk\git\cmd;%PATH%"
+if exist "%WORK%emsdk\git\bin\git.exe" set "PATH=%WORK%emsdk\git\bin;%PATH%"
+where git >nul 2>nul
+if not errorlevel 1 (
+  git --version
+  exit /b 0
+)
+set "COD2_MINGIT_DIR=%WORK%portable-git"
+if not exist "%COD2_MINGIT_DIR%\cmd\git.exe" (
+  echo [CoD2 QA] Git not found on this PC. Downloading verified portable Git...
+  powershell -NoProfile -NonInteractive -Command "$ErrorActionPreference='Stop'; $dir=$env:COD2_MINGIT_DIR; $archive=Join-Path $env:TEMP 'cod2-mingit-2.56.0.3-x64.zip'; $url='https://github.com/git-for-windows/git/releases/download/v2.56.0.windows.3/MinGit-2.56.0.3-64-bit.zip'; $sha='2e5619966e588fde5f8122c5557cad50c0fbafcaed736689f40ec1dfb1d78ea7'; if (!(Test-Path -LiteralPath $archive) -or (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ne $sha) { Invoke-WebRequest -Uri $url -UseBasicParsing -OutFile $archive }; if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ne $sha) { throw 'Portable Git SHA256 check failed' }; New-Item -ItemType Directory -Path $dir -Force | Out-Null; Expand-Archive -LiteralPath $archive -DestinationPath $dir -Force; if (!(Test-Path -LiteralPath (Join-Path $dir 'cmd\git.exe'))) { throw 'Portable Git extraction failed' }"
+  if errorlevel 1 (
+    echo ERROR: Portable Git download or verification failed. Do not run unknown installers.
+    exit /b 1
+  )
+)
+set "PATH=%COD2_MINGIT_DIR%\cmd;%PATH%"
+where git >nul 2>nul
+if errorlevel 1 (
+  echo ERROR: git.exe still missing after portable extraction.
+  exit /b 1
+)
+git --version
+exit /b 0
+
+:ensure_build_tools
+rem A normal CMake install is enough; do not download toolchains as a side effect.
+where cmake >nul 2>nul
+if errorlevel 1 (
+  if exist "%ProgramFiles%\CMake\bin\cmake.exe" set "PATH=%ProgramFiles%\CMake\bin;%PATH%"
+  if exist "%LOCALAPPDATA%\Programs\CMake\bin\cmake.exe" set "PATH=%LOCALAPPDATA%\Programs\CMake\bin;%PATH%"
+  if exist "%WORK%cmake\bin\cmake.exe" set "PATH=%WORK%cmake\bin;%PATH%"
+)
+where cmake >nul 2>nul
+if errorlevel 1 (
+  echo ERROR: CMake is missing. Install CMake or add its bin folder to PATH.
+  exit /b 1
+)
+where ninja >nul 2>nul
+if errorlevel 1 (
+  if exist "%WORK%w64devkit\bin\ninja.exe" set "PATH=%WORK%w64devkit\bin;%PATH%"
+  if exist "%WORK%ninja\ninja.exe" set "PATH=%WORK%ninja;%PATH%"
+)
+where ninja >nul 2>nul
+if errorlevel 1 (
+  echo ERROR: Ninja is missing from the existing portable SDK.
+  exit /b 1
+)
+exit /b 0
