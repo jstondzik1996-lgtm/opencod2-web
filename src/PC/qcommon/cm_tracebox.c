@@ -15,43 +15,51 @@ void CM_CalcTraceEntents(TraceExtents *extents)
     }
 }
 
+/*
+ * Returns nonzero when the segment start->end does NOT enter the box before
+ * `fraction` (so callers skip the entity), zero when it may hit it.
+ *
+ * Slab test over both faces of each axis: pass 0 uses mins with sign -1,
+ * pass 1 uses maxs with sign +1 (t = signed distance outside the face).
+ * The earlier reconstruction used the same sign for both passes, mixed up
+ * the entry comparison and returned "skip" whenever fraction != 1, i.e.
+ * whenever the world was already hit behind the entity - which is almost
+ * every bullet, so no player was ever tested against its hitboxes.
+ */
 qboolean CM_TraceBox(const TraceExtents *extents, const vec_t *mins, const vec_t *maxs, float fraction)
 {
-    const vec_t *bounds;
-    float tmin, tmax, t1, t2, invD;
+    const vec_t *bounds = mins;
+    float sign = -1.0f;
+    float enter = 0.0f;
+    float t1, t2, f;
     int i, pass;
 
-    tmin = 0.0f;
-    tmax = fraction;
-
     for (pass = 0; pass < 2; pass++) {
-        bounds = (pass == 0) ? mins : maxs;
         for (i = 0; i < 3; i++) {
-            t1 = (extents->start[i] - bounds[i]) * -1.0f;
-            t2 = (extents->end[i] - bounds[i]) * -1.0f;
+            t1 = (extents->start[i] - bounds[i]) * sign;
+            t2 = (extents->end[i] - bounds[i]) * sign;
 
             if (t1 > 0.0f) {
+                /* start outside this face */
                 if (t2 > 0.0f)
-                    return 1;
-
-                invD = t1 * extents->invDelta[i] * -1.0f;
-                if (invD >= tmax)
-                    return 1;
-                if (0.0f - invD > tmin)
-                    tmin = invD;
+                    return 1;   /* both outside: misses */
+                f = t1 * extents->invDelta[i] * sign;
+                if (f >= fraction)
+                    return 1;   /* enters only after the current hit */
+                if (f > enter)
+                    enter = f;
             } else if (t2 > 0.0f) {
-
-                invD = t1 * extents->invDelta[i] * -1.0f;
-                if (invD <= 0.0f)
-                    return 1;
-
-                if (invD < tmax)
-                    tmax = invD;
-                else
-                    tmax = tmax;
+                /* start inside, leaves through this face */
+                f = t1 * extents->invDelta[i] * sign;
+                if (enter >= f)
+                    return 1;   /* leaves before it enters */
+                if (f < fraction)
+                    fraction = f;
             }
         }
+        bounds = maxs;
+        sign = 1.0f;
     }
 
-    return (tmax == 1.0f) ? 0 : 1;
+    return 0;
 }

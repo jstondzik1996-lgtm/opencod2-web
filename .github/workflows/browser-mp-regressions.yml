@@ -48,6 +48,8 @@ jobs:
         run: sh tests/cm_world_link/run.sh
       - name: Compile and run original bone hitbox trace (DObjTraceline)
         run: sh tests/dobj_trace/run.sh
+      - name: Compile and run entity box early-out (CM_TraceBox)
+        run: sh tests/trace_box/run.sh
 
   win32-server-compilation:
     name: MinGW i686 dedicated server build (no game assets)

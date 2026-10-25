@@ -86,4 +86,13 @@ Upstream baseline: `c301dd6e8550c59a3fdd3081c73dc4ffd2c8602c`.
 - Deploy: relay now finds `sessions.py` next to itself (VPS layout) or in tools/master_proxy (repo); `deploy_web_to_vps.sh` copies `sessions.py`, `lobby.js`, new icons; remote game assets are now OFF unless `PUBLISH_REMOTE_ASSETS=1` (the old script published `/play/assets.json` to everyone). Master proxy README lists the three files it needs.
 - Still pending, needs the local Windows stack: `tools/browser_multiplayer_check.py` (damage, death, respawn, disconnect, reconnect), then fleet + lobby + sessions on real servers, then load tests.
 
+## 2026-10-25 — Claude: first real Windows two-client run on the new code; CM_TraceBox fix
+
+Run on the user's PC (isolated: server 127.0.0.1:28961, web 8081/20721/20722; preview 8080 untouched) with commit e49bf6d, via `work/CLAUDE_RUN_TEST.bat` (downloads the branch to `work/opencod2-claude`, builds, runs `tools/browser_multiplayer_check.py` with installed Chrome):
+- PASS: two distinct clients, spawn, movement, firing, server alive after disconnect (snapshots keep advancing), reconnect, server alive after reconnect. The old unlink hang is gone.
+- FAIL: damage_to_other_player, target_died, target_respawned. Server log: the target is now a bullet candidate (`entity=1 contents=2000000`), aim is exact (target ~85 units, world hit at ~165 units behind him), but `bullet model` never printed: the hitbox test was never reached.
+- Cause: `CM_TraceBox` (cm_tracebox.c) was mis-reconstructed: same sign for the mins and maxs passes, inverted entry comparison, and it returned "skip" whenever fraction != 1, i.e. whenever any world surface had been hit behind the entity. Rewritten to the original slab test. New `tests/trace_box` (real file, i386): old code fails the recorded game case and 5105/200000 random cases, new code passes all. Also affects static-model collision and sight traces (all callers use the same early-out).
+- Windows also exposed the UDP connection-reset bug in the directory poller (fixed in e49bf6d).
+- Next: rerun the same script on the PC.
+
 See `HANDOFF.md` for exact endpoints, build steps, limitations and next work. This checkpoint does not establish working combat.

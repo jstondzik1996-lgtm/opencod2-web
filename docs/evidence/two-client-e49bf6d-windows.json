@@ -1,0 +1,539 @@
+{
+ "checks": {
+  "two_distinct_clients": true,
+  "both_spawned": true,
+  "both_move": true,
+  "both_fire": true,
+  "damage_to_other_player": false,
+  "target_died": false,
+  "target_respawned": false,
+  "server_alive_after_disconnect": true,
+  "reconnected": true,
+  "server_alive_after_reconnect": true
+ },
+ "movements": [
+  {
+   "before": {
+    "ready": true,
+    "state": 8,
+    "client": 0,
+    "serverTime": 69455,
+    "snapshotTime": 69600,
+    "commandTime": 69311,
+    "pmType": 0,
+    "origin": [
+     894.26,
+     805.017,
+     -16.728
+    ],
+    "velocity": [
+     0,
+     0,
+     0
+    ],
+    "weapon": 7,
+    "clip": 32,
+    "health": 100,
+    "keyCatchers": 0,
+    "psClient": 0,
+    "entities": 53,
+    "viewAngles": [
+     0,
+     44.698,
+     0
+    ],
+    "inputAngles": [
+     0,
+     0,
+     0
+    ],
+    "viewHeight": 60
+   },
+   "after": {
+    "ready": true,
+    "state": 8,
+    "client": 0,
+    "serverTime": 72303,
+    "snapshotTime": 72450,
+    "commandTime": 72052,
+    "pmType": 0,
+    "origin": [
+     1071.348,
+     1027.385,
+     0.391
+    ],
+    "velocity": [
+     -8,
+     92,
+     5
+    ],
+    "weapon": 7,
+    "clip": 32,
+    "health": 100,
+    "keyCatchers": 0,
+    "psClient": 0,
+    "entities": 53,
+    "viewAngles": [
+     0,
+     44.698,
+     0
+    ],
+    "inputAngles": [
+     0,
+     0,
+     0
+    ],
+    "viewHeight": 60
+   }
+  },
+  {
+   "before": {
+    "ready": true,
+    "state": 8,
+    "client": 1,
+    "serverTime": 74619,
+    "snapshotTime": 74750,
+    "commandTime": 74458,
+    "pmType": 0,
+    "origin": [
+     2563,
+     852.06,
+     63.986
+    ],
+    "velocity": [
+     0,
+     0,
+     0
+    ],
+    "weapon": 18,
+    "clip": 32,
+    "health": 100,
+    "keyCatchers": 0,
+    "psClient": 1,
+    "entities": 50,
+    "viewAngles": [
+     0,
+     179.698,
+     0
+    ],
+    "inputAngles": [
+     0,
+     0,
+     0
+    ],
+    "viewHeight": 60
+   },
+   "after": {
+    "ready": true,
+    "state": 8,
+    "client": 1,
+    "serverTime": 76959,
+    "snapshotTime": 77100,
+    "commandTime": 76927,
+    "pmType": 0,
+    "origin": [
+     2319.008,
+     852.062,
+     57.427
+    ],
+    "velocity": [
+     0,
+     0,
+     0
+    ],
+    "weapon": 18,
+    "clip": 32,
+    "health": 100,
+    "keyCatchers": 0,
+    "psClient": 1,
+    "entities": 50,
+    "viewAngles": [
+     0,
+     179.698,
+     0
+    ],
+    "inputAngles": [
+     0,
+     0,
+     0
+    ],
+    "viewHeight": 60
+   }
+  }
+ ],
+ "fire": [
+  {
+   "before": {
+    "ready": true,
+    "state": 8,
+    "client": 0,
+    "serverTime": 72575,
+    "snapshotTime": 72750,
+    "commandTime": 72303,
+    "pmType": 0,
+    "origin": [
+     1070.926,
+     1032.418,
+     0.678
+    ],
+    "velocity": [
+     0,
+     0,
+     0
+    ],
+    "weapon": 7,
+    "clip": 32,
+    "health": 100,
+    "keyCatchers": 0,
+    "psClient": 0,
+    "entities": 53,
+    "viewAngles": [
+     0,
+     44.698,
+     0
+    ],
+    "inputAngles": [
+     0,
+     0,
+     0
+    ],
+    "viewHeight": 60
+   },
+   "after": {
+    "ready": true,
+    "state": 8,
+    "client": 0,
+    "serverTime": 74578,
+    "snapshotTime": 74750,
+    "commandTime": 74284,
+    "pmType": 0,
+    "origin": [
+     1070.926,
+     1032.418,
+     0.678
+    ],
+    "velocity": [
+     0,
+     0,
+     0
+    ],
+    "weapon": 7,
+    "clip": 26,
+    "health": 100,
+    "keyCatchers": 0,
+    "psClient": 0,
+    "entities": 53,
+    "viewAngles": [
+     0,
+     44.698,
+     0
+    ],
+    "inputAngles": [
+     0,
+     0,
+     0
+    ],
+    "viewHeight": 60
+   }
+  },
+  {
+   "before": {
+    "ready": true,
+    "state": 8,
+    "client": 1,
+    "serverTime": 76959,
+    "snapshotTime": 77100,
+    "commandTime": 76927,
+    "pmType": 0,
+    "origin": [
+     2319.008,
+     852.062,
+     57.427
+    ],
+    "velocity": [
+     0,
+     0,
+     0
+    ],
+    "weapon": 18,
+    "clip": 32,
+    "health": 100,
+    "keyCatchers": 0,
+    "psClient": 1,
+    "entities": 50,
+    "viewAngles": [
+     0,
+     179.698,
+     0
+    ],
+    "inputAngles": [
+     0,
+     0,
+     0
+    ],
+    "viewHeight": 60
+   },
+   "after": {
+    "ready": true,
+    "state": 8,
+    "client": 1,
+    "serverTime": 78703,
+    "snapshotTime": 78850,
+    "commandTime": 78687,
+    "pmType": 0,
+    "origin": [
+     2319.008,
+     852.062,
+     57.427
+    ],
+    "velocity": [
+     0,
+     0,
+     0
+    ],
+    "weapon": 18,
+    "clip": 23,
+    "health": 100,
+    "keyCatchers": 0,
+    "psClient": 1,
+    "entities": 50,
+    "viewAngles": [
+     0,
+     179.698,
+     0
+    ],
+    "inputAngles": [
+     0,
+     0,
+     0
+    ],
+    "viewHeight": 60
+   }
+  }
+ ],
+ "duel": {
+  "before": [
+   {
+    "ready": true,
+    "state": 8,
+    "client": 0,
+    "serverTime": 81245,
+    "snapshotTime": 81200,
+    "commandTime": 80902,
+    "pmType": 0,
+    "origin": [
+     894.315,
+     805.082,
+     -16.807
+    ],
+    "velocity": [
+     0,
+     0,
+     0
+    ],
+    "weapon": 7,
+    "clip": 26,
+    "health": 100,
+    "keyCatchers": 0,
+    "psClient": 0,
+    "entities": 54,
+    "viewAngles": [
+     20.649,
+     51.465,
+     0
+    ],
+    "inputAngles": [
+     20.652,
+     51.469,
+     0
+    ],
+    "viewHeight": 60
+   },
+   {
+    "ready": true,
+    "state": 8,
+    "client": 1,
+    "serverTime": 81205,
+    "snapshotTime": 81300,
+    "commandTime": 80961,
+    "pmType": 0,
+    "origin": [
+     944.007,
+     867.484,
+     -21.873
+    ],
+    "velocity": [
+     0,
+     0,
+     0
+    ],
+    "weapon": 18,
+    "clip": 23,
+    "health": 100,
+    "keyCatchers": 0,
+    "psClient": 1,
+    "entities": 54,
+    "viewAngles": [
+     0,
+     0,
+     0
+    ],
+    "inputAngles": [
+     0,
+     0,
+     0
+    ],
+    "viewHeight": 60
+   }
+  ],
+  "after": [
+   {
+    "ready": true,
+    "state": 8,
+    "client": 0,
+    "serverTime": 83783,
+    "snapshotTime": 83850,
+    "commandTime": 83494,
+    "pmType": 0,
+    "origin": [
+     894.315,
+     805.082,
+     -16.807
+    ],
+    "velocity": [
+     0,
+     0,
+     0
+    ],
+    "weapon": 7,
+    "clip": 14,
+    "health": 100,
+    "keyCatchers": 0,
+    "psClient": 0,
+    "entities": 54,
+    "viewAngles": [
+     20.649,
+     51.465,
+     0
+    ],
+    "inputAngles": [
+     20.652,
+     51.469,
+     0
+    ],
+    "viewHeight": 60
+   },
+   {
+    "ready": true,
+    "state": 8,
+    "client": 1,
+    "serverTime": 83806,
+    "snapshotTime": 83950,
+    "commandTime": 83674,
+    "pmType": 0,
+    "origin": [
+     944.007,
+     867.484,
+     -21.873
+    ],
+    "velocity": [
+     0,
+     0,
+     0
+    ],
+    "weapon": 18,
+    "clip": 23,
+    "health": 100,
+    "keyCatchers": 0,
+    "psClient": 1,
+    "entities": 54,
+    "viewAngles": [
+     0,
+     0,
+     0
+    ],
+    "inputAngles": [
+     0,
+     0,
+     0
+    ],
+    "viewHeight": 60
+   }
+  ]
+ },
+ "lifecycle": {
+  "kill": [
+   {
+    "health": 100,
+    "pmType": 0,
+    "shooterClip": 8
+   },
+   {
+    "health": 100,
+    "pmType": 0,
+    "shooterClip": 2
+   },
+   {
+    "health": 100,
+    "pmType": 0,
+    "shooterClip": 0
+   },
+   {
+    "health": 100,
+    "pmType": 0,
+    "shooterClip": 0
+   },
+   {
+    "health": 100,
+    "pmType": 0,
+    "shooterClip": 0
+   },
+   {
+    "health": 100,
+    "pmType": 0,
+    "shooterClip": 27
+   },
+   {
+    "health": 100,
+    "pmType": 0,
+    "shooterClip": 22
+   },
+   {
+    "health": 100,
+    "pmType": 0,
+    "shooterClip": 15
+   },
+   {
+    "health": 100,
+    "pmType": 0,
+    "shooterClip": 9
+   },
+   {
+    "health": 100,
+    "pmType": 0,
+    "shooterClip": 3
+   },
+   {
+    "health": 100,
+    "pmType": 0,
+    "shooterClip": 0
+   }
+  ],
+  "respawn": [],
+  "alive_during_disconnect": [
+   111700,
+   112750,
+   113800,
+   114950,
+   115900,
+   117000
+  ],
+  "reconnect": [
+   5,
+   6,
+   7,
+   8
+  ]
+ },
+ "_note": "Windows run 2026-10-25 21:31 on commit e49bf6d (before the CM_TraceBox fix). Sanitized: no key, no profile paths."
+}
