@@ -1,5 +1,9 @@
 # Work log
 
+## 2026-10-25 — Codex: shared collaboration instruction
+
+The user explicitly wants Work, Codex and Claude to implement together on the same project and shared `codex/browser-mp-checkpoint` branch. The earlier review-only instruction for ChatGPT is superseded. No assistant-specific branches are requested. Sync incoming changes, preserve each other's edits, and record stages/results here. Current technical next step remains the paired collision contents/entity-index investigation described in HANDOFF.md; this documentation change does not claim a combat fix.
+
 ## 2026-10-25 — Initial Windows/browser checkpoint
 
 Upstream baseline: `c301dd6e8550c59a3fdd3081c73dc4ffd2c8602c`.

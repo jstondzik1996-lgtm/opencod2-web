@@ -80,5 +80,13 @@ Integration harness: `tools/browser_multiplayer_check.py` requires Playwright Ch
 
 ## Continue documenting
 
+### Shared collaboration (user instruction, 2026-10-25)
+
+Codex, ChatGPT Work and Claude are all authorized to implement improvements in this same project and on the shared `codex/browser-mp-checkpoint` branch of `jstondzik1996-lgtm/opencod2-web`. Work is not restricted to review. Continue from the latest shared state; do not create separate branches or forks for each assistant.
+
+Before editing, read the current work log and inspect local uncommitted changes. With separate checkouts, fetch the shared branch and integrate incoming commits before pushing; use ordinary non-force pushes. If a push is rejected because another assistant pushed first, integrate those changes while preserving both contributions, then retry. With a shared checkout, preserve the other assistant's in-progress edits and coordinate overlapping files through the work log/messages instead of resetting or overwriting them.
+
+Record the assistant, current stage, files being changed, test results, remaining problems and next step in `docs/WORK_LOG.md`. These notes provide coordination, not an approval gate or exclusive ownership. Keep working on useful tasks, exchange findings, and update `HANDOFF.md` when the verified project status changes. All assistants may improve code and run tests; report actual results and push small coherent checkpoints.
+
 Update this file and `docs/WORK_LOG.md` after each meaningful verified change. Commit code, reproduction steps and sanitized test results together. Push to the user's fork. Keep incomplete work explicit so another assistant can continue without repeating failed experiments. Do not commit build products, asset archives or local credentials. Do not overwrite the known-good preview with an unverified experimental server.
 
