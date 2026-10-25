@@ -257,8 +257,17 @@ class ServerDirectory:
             counts[sid] = counts.get(sid, 0) + 1
         return counts
 
-    def _public(self, e: ServerEntry, reserved: int) -> dict:
+    def _is_online(self, e: ServerEntry, now: float) -> bool:
+        """Never advertise stale server status if the polling thread stalls.
+
+        e.online is the last poller's verdict, but must not outlive
+        stale_after when a poll fails to run at all (CPU stalls/shutdown).
+        """
+        return e.online and e.last_seen > 0 and now - e.last_seen <= self.stale_after
+
+    def _public(self, e: ServerEntry, reserved: int, now: float) -> dict:
         players = len(e.players)
+        online = self._is_online(e, now)
         return {
             "id": e.id,
             "name": e.name,
@@ -272,8 +281,8 @@ class ServerDirectory:
             "players": players,
             "maxPlayers": e.capacity,
             "reserved": reserved,
-            "free": max(0, e.capacity - players - reserved) if e.online else 0,
-            "status": "online" if e.online else "offline",
+            "free": max(0, e.capacity - players - reserved) if online else 0,
+            "status": "online" if online else "offline",
             "lastSeen": int(e.last_seen) if e.last_seen else None,
             "ping_ms": e.ping_ms,
             "password": e.password,
@@ -283,7 +292,7 @@ class ServerDirectory:
         now = self._clock()
         with self._lock:
             reserved = self._reserved_locked(now)
-            return [self._public(self._entries[sid], reserved.get(sid, 0))
+            return [self._public(self._entries[sid], reserved.get(sid, 0), now)
                     for sid in self._order
                     if include_private or not self._entries[sid].private]
 
@@ -294,7 +303,7 @@ class ServerDirectory:
         with self._lock:
             for sid in self._order:
                 e = self._entries[sid]
-                if e.private or not e.online:
+                if e.private or not self._is_online(e, now):
                     continue
                 out.append({
                     "ip": e.host,
@@ -328,7 +337,7 @@ class ServerDirectory:
             best_key = None
             for sid in self._order:
                 e = self._entries[sid]
-                if e.private or not e.online or e.password or sid in excluded:
+                if e.private or not self._is_online(e, now) or e.password or sid in excluded:
                     continue
                 if mode and mode not in (e.mode, e.gametype.lower()):
                     continue
@@ -347,7 +356,7 @@ class ServerDirectory:
             expires = now + self.reservation_ttl
             self._reservations[token] = (best.id, expires)
             reserved[best.id] = reserved.get(best.id, 0) + 1
-            result = self._public(best, reserved[best.id])
+            result = self._public(best, reserved[best.id], now)
         result["reservation"] = token
         result["expiresIn"] = int(self.reservation_ttl)
         return result
