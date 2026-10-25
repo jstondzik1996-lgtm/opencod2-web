@@ -20,12 +20,11 @@ set "REMOTE_URL=https://github.com/jstondzik1996-lgtm/opencod2-web.git"
 set "PYTHON=%USERPROFILE%\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe"
 set "PYTHONPATH=%WORK%python-tools;%PYTHONPATH%"
 set "COD2_RELAY_ALLOW_ANY="
-set "COD2_PORT_MIN=28963"
-set "COD2_PORT_MAX=28963"
+rem The QA UDP port is selected dynamically before service startup.
 
 echo.
 echo [CoD2 QA] Existing project: "%BASE_REPO%"
-echo [CoD2 QA] QA ports HTTP 8082 / UDP 28963; old 8080/8081 untouched.
+echo [CoD2 QA] Old previews 8080/8081 untouched. QA ports chosen from a free range.
 echo [CoD2 QA] Downloads only verified, portable developer tools.
 echo.
 
@@ -114,6 +113,10 @@ if defined USE_WORKTREE (
   set "SOURCE=%QA_SOURCE%"
 )
 echo [CoD2 QA] Build source: "%SOURCE%"
+rem Use a separate build folder per revision. Older QA servers may still be
+rem serving previous builds; never overwrite assets they are actively serving.
+set "QAWEB=%WORK%qa-build-web-%QA_SHA:~0,10%"
+set "QANATIVE=%WORK%qa-build-win32-%QA_SHA:~0,10%"
 
 echo.
 echo [2/5] Loading existing emsdk and compiler...
@@ -153,18 +156,37 @@ if exist "%BASE_REPO%\build\web\zone" if not exist "%QAWEB%\zone" (
   mklink /J "%QAWEB%\zone" "%BASE_REPO%\build\web\zone"
 )
 if not exist "%QAWEB%\assets.json" echo WARNING: assets.json is missing; file picker may be required on the new port.
+echo.
+echo [5/5] Finding unused QA ports (avoiding the old running 8082)...
+set "QA_PORT_SET="
+for /f "delims=" %%P in ('powershell -NoProfile -NonInteractive -Command "$ip=[Net.IPAddress]::Loopback; foreach($i in 0..15){ $p=@((8082+$i),(20723+2*$i),(20724+2*$i)); $u=28963+$i; $ls=@(); $udp=$null; $ok=$true; try { foreach($n in $p){$t=[Net.Sockets.TcpListener]::new($ip,$n); $t.Start(); $ls+=,$t }; $udp=[Net.Sockets.UdpClient]::new([Net.IPEndPoint]::new($ip,$u)) } catch { $ok=$false } finally { if($udp){$udp.Dispose()}; foreach($t in $ls){$t.Stop()} }; if($ok){Write-Output ($p[0].ToString()+','+$p[1]+','+$p[2]+','+$u); break} }"') do set "QA_PORT_SET=%%P"
+if not defined QA_PORT_SET (
+  echo ERROR: All QA port sets are occupied. Close old QA windows and retry.
+  goto :fail
+)
+for /f "tokens=1-4 delims=," %%A in ("%QA_PORT_SET%") do (
+  set "QA_HTTP_PORT=%%A"
+  set "QA_MASTER_PORT=%%B"
+  set "QA_RELAY_PORT=%%C"
+  set "QA_GAME_PORT=%%D"
+)
+set "QAHOME=%WORK%native-server-qa-%QA_GAME_PORT%"
+set "SERVERS=%WORK%cod2-qa-servers-%QA_GAME_PORT%.json"
+set "COD2_PORT_MIN=%QA_GAME_PORT%"
+set "COD2_PORT_MAX=%QA_GAME_PORT%"
+echo [CoD2 QA] Using HTTP %QA_HTTP_PORT%, UDP %QA_GAME_PORT%.
 if not exist "%QAHOME%\main" mkdir "%QAHOME%\main"
-> "%SERVERS%" echo {"servers":[{"id":"qa-local","name":"CoD2 QA Local","region":"local","host":"127.0.0.1","port":28963,"mode":"dm","maxPlayers":4}]}
+> "%SERVERS%" echo {"servers":[{"id":"qa-local","name":"CoD2 QA Local","region":"local","host":"127.0.0.1","port":%QA_GAME_PORT%,"mode":"dm","maxPlayers":4}]}
 
 echo.
-echo [5/5] Starting isolated QA services on NEW ports only...
-start "CoD2 QA Server 28963" /D "%SERVERROOT%" "%QANATIVE%\cod2_win32_ded.exe" +set dedicated 1 +set net_ip 127.0.0.1 +set net_port 28963 +set net_lanauthorize 0 +set fs_basepath "%SERVERROOT%" +set fs_homepath "%QAHOME%" +exec browser-test.cfg
+echo [CoD2 QA] Starting isolated QA services on selected ports...
+start "CoD2 QA Server %QA_GAME_PORT%" /D "%SERVERROOT%" "%QANATIVE%\cod2_win32_ded.exe" +set dedicated 1 +set net_ip 127.0.0.1 +set net_port %QA_GAME_PORT% +set net_lanauthorize 0 +set fs_basepath "%SERVERROOT%" +set fs_homepath "%QAHOME%" +exec browser-test.cfg
 timeout /t 3 /nobreak >nul
-start "CoD2 QA HTTP 8082" /D "%SOURCE%" "%PYTHON%" "%SOURCE%\tools\serve_web_local.py" --port 8082 --master-port 20723 --relay-port 20724 --root "%QAWEB%" --servers "%SERVERS%" --sessions
+start "CoD2 QA HTTP %QA_HTTP_PORT%" /D "%SOURCE%" "%PYTHON%" "%SOURCE%\tools\serve_web_local.py" --port %QA_HTTP_PORT% --master-port %QA_MASTER_PORT% --relay-port %QA_RELAY_PORT% --root "%QAWEB%" --servers "%SERVERS%" --sessions
 timeout /t 3 /nobreak >nul
-start "" "http://127.0.0.1:8082/cod2.html"
+start "" "http://127.0.0.1:%QA_HTTP_PORT%/cod2.html"
 echo.
-echo [CoD2 QA] QA URL: http://127.0.0.1:8082/cod2.html
+echo [CoD2 QA] QA URL: http://127.0.0.1:%QA_HTTP_PORT%/cod2.html
 echo [CoD2 QA] Old preview on port 8081 was NOT touched.
 echo [CoD2 QA] A successful build alone does not prove correct gameplay.
 pause
