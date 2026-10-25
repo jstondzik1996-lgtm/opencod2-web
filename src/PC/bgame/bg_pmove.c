@@ -1374,9 +1374,55 @@ static void PM_NoclipMove(pmove_t *pm, pml_t *pml)
     PM_SetMovementDir(pm, pml);
 }
 
+/*
+ * Keep ladder movement separate from airborne movement. The previous
+ * reconstruction delegated this to PM_AirMove, which removes the vertical
+ * component of the player's wish direction and then applies gravity; as a
+ * result PMF_LADDER players could not climb even if ladder detection worked.
+ *
+ * This is a conservative climbing baseline, NOT yet a verified reproduction
+ * of the full original CoD2 ladder acceleration/attachment behaviour.
+ * PMF_LADDER detection itself still needs a real-map integration check.
+ */
 static void PM_REGPARM2_ABI PM_LadderMove(pmove_t *pm, pml_t *pml)
 {
-    PM_AirMove(pm, pml);
+    playerState_t *ps = pm->ps;
+    vec3_t wishvel, wishdir;
+    float scale, speed, normalDot;
+    float nx = ps->vLadderVec[0], ny = ps->vLadderVec[1];
+    float nlen = sqrtf(nx * nx + ny * ny);
+
+    if (Jump_Check(pm, pml)) {
+        PM_AirMove(pm, pml);
+        return;
+    }
+
+    /* No air gravity. Dampen last tick's velocity on idle ladder commands. */
+    ps->velocity[0] *= fmaxf(0.0f, 1.0f - 10.0f * pml->frametime);
+    ps->velocity[1] *= fmaxf(0.0f, 1.0f - 10.0f * pml->frametime);
+    ps->velocity[2] *= fmaxf(0.0f, 1.0f - 10.0f * pml->frametime);
+
+    /* Movement is vertical on W/S and tangent to the ladder on A/D.
+     * Project strafe away from the ladder face to prevent drift through it. */
+    wishvel[0] = pml->right[0] * (float)pm->cmd.rightmove;
+    wishvel[1] = pml->right[1] * (float)pm->cmd.rightmove;
+    if (nlen > 0.001f) {
+        nx /= nlen;
+        ny /= nlen;
+        normalDot = wishvel[0] * nx + wishvel[1] * ny;
+        wishvel[0] -= normalDot * nx;
+        wishvel[1] -= normalDot * ny;
+    }
+    wishvel[2] = (float)pm->cmd.forwardmove;
+
+    scale = PM_CmdScale(ps, &pm->cmd);
+    PM_VectorCopy(wishvel, wishdir);
+    speed = Vec3Normalize(wishdir) * scale;
+    if (speed > (float)ps->speed * 0.5f)
+        speed = (float)ps->speed * 0.5f;
+    PM_Accelerate(ps, pml, wishdir, speed, 10.0f);
+    PM_StepSlideMove(pm, pml, 0);
+    PM_SetMovementDir(pm, pml);
 }
 
 static void PM_GetViewHeightLerp(const viewLerpWaypoint_t *table, int frac,
