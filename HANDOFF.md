@@ -22,7 +22,7 @@ Run the original Call of Duty 2 1.3 multiplayer client inside a browser, without
 Two independent blockers were on the bullet path; both are fixed in code, neither is proven by a real two-client run yet:
 1. Player hulls were never linked for collision (temp box leaf contents 0) and the world-sector lists mixed 0/1-based indices. Fixed in `cm_load_obj.c` (leaf contents -1 like the original) and `cm_world.c`.
 2. `ClientEndFrame` never set `takedamage = 1` for living players, so every hit was discarded before damage. Fixed in `g_active_mp.c` (also viewmodelIndex and PM_DEAD selection).
-Asset-free tests: `tests/cm_world_link/run.sh`, `tests/dobj_trace/run.sh`, Python suite; all run in CI. Next proof needed: `tools/browser_multiplayer_check.py` on the local Windows stack.
+Asset-free tests: `tests/cm_world_link/run.sh`, `tests/dobj_trace/run.sh`, Python suite; all run in CI, which also compiles the WASM client and the MinGW i686 dedicated server (5/5 green on a854e80). Next proof needed: `tools/browser_multiplayer_check.py` on the local Windows stack. If damage still fails there, check first that the victim has a server DObj (`Com_GetServerDObj`) and look at the `g_debugBullets 6` lines.
 
 ## Player sessions on project servers (P2, Claude 2026-10-25)
 

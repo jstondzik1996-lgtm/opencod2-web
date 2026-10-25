@@ -44,9 +44,12 @@ except ImportError:
     print("ERROR: pip install websockets  (>= 12.0)", file=sys.stderr)
     sys.exit(1)
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                                "master_proxy"))
-import sessions  # noqa: E402  (tools/master_proxy/sessions.py)
+try:
+    import sessions  # deployed next to relay.py (/opt/cod2-game-relay/sessions.py)
+except ImportError:  # repository layout: tools/master_proxy/sessions.py
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                    "master_proxy"))
+    import sessions  # noqa: E402
 
 RELAY_PORT = int(os.environ.get("RELAY_PORT", "20712"))
 RELAY_HOST = os.environ.get("RELAY_HOST", "127.0.0.1")

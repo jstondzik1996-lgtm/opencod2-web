@@ -79,4 +79,11 @@ Upstream baseline: `c301dd6e8550c59a3fdd3081c73dc4ffd2c8602c`.
   - `tools/build_overlay_pack.py`: zz_ overlay IWD to replace individual files with licensed equivalents, with an override report (bug found by the test and fixed: the overlay indexed itself when written into the base folder).
 - Tests: `tools/test_stage2_delivery.py` (access key, overlay report, real cod2_fs.js in Chromium/OPFS: unchanged archives cached, replaced one re-downloaded). 45 Python tests OK.
 
+## 2026-10-25 — Claude: CI 5/5 green incl. Windows server; deploy fixes; field-level audit
+
+- CI run 40228343453 (a854e80): all five jobs passed — Python (45 tests), Chromium lobby, i386 cm_world + dobj harnesses, Emscripten WASM client, and now the MinGW i686 dedicated server build (with today's takedamage, hull contents and entity-list fixes). Compiled only; not run.
+- Field-level comparison of every same-named function in game_mp/server_mp against the behavioural reference: no further missing assignments on the combat path (remaining differences are style: macros, element-wise copies, aliases). Notes: our `player_die` also returns for noclip/ufo (`pm_type > 1`) where the reference returns only when dead; death also requires a server DObj for the player (`Com_GetServerDObj`), to watch in the real run.
+- Deploy: relay now finds `sessions.py` next to itself (VPS layout) or in tools/master_proxy (repo); `deploy_web_to_vps.sh` copies `sessions.py`, `lobby.js`, new icons; remote game assets are now OFF unless `PUBLISH_REMOTE_ASSETS=1` (the old script published `/play/assets.json` to everyone). Master proxy README lists the three files it needs.
+- Still pending, needs the local Windows stack: `tools/browser_multiplayer_check.py` (damage, death, respawn, disconnect, reconnect), then fleet + lobby + sessions on real servers, then load tests.
+
 See `HANDOFF.md` for exact endpoints, build steps, limitations and next work. This checkpoint does not establish working combat.

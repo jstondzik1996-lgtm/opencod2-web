@@ -23,19 +23,21 @@ FS_JS="$SRC/cod2_fs.js"
 if [[ -f src/web/cod2_fs.js ]]; then FS_JS="src/web/cod2_fs.js"; fi
 
 ssh "$HOST" "mkdir -p /tmp/cod2-web-upload /tmp/cod2-game-relay-upload"
-scp "$SRC/cod2.html" "$SRC/cod2.js" "$SRC/cod2.wasm" "$FS_JS" "$HOST:/tmp/cod2-web-upload/"
+scp "$SRC/cod2.html" "$SRC/cod2.js" "$SRC/cod2.wasm" "$FS_JS" \
+    src/web/lobby.js src/web/brand-mark.png src/web/favicon.png src/web/apple-touch-icon.png \
+    "$HOST:/tmp/cod2-web-upload/"
 if [[ -f "$SRC/cod2.wasm.map" ]]; then
   scp "$SRC/cod2.wasm.map" "$HOST:/tmp/cod2-web-upload/" || true
 fi
 # Game WS↔UDP relay (Join/connect). Safe to re-copy every deploy.
 if [[ -f tools/game_proxy/relay.py ]]; then
-  scp tools/game_proxy/relay.py tools/game_proxy/cod2-game-relay.service \
+  scp tools/game_proxy/relay.py tools/master_proxy/sessions.py tools/game_proxy/cod2-game-relay.service \
       tools/game_proxy/requirements.txt \
       tools/nginx-cod2-web.conf \
       "$HOST:/tmp/cod2-game-relay-upload/" || true
 fi
 
-ssh "$HOST" "VER='$VER' DST='$DST' bash -s" <<'EOF'
+ssh "$HOST" "VER='$VER' DST='$DST' PUBLISH_REMOTE_ASSETS='${PUBLISH_REMOTE_ASSETS:-0}' bash -s" <<'EOF'
 set -eu
 set -o pipefail
 SRC=/tmp/cod2-web-upload
@@ -50,11 +52,22 @@ install -m 644 "$SRC/cod2.js"    "$DST/cod2.js"
 install -m 644 "$SRC/cod2.wasm"  "$DST/cod2.wasm"
 gzip -9kf "$DST/cod2.wasm"
 install -m 644 "$SRC/cod2_fs.js" "$DST/cod2_fs.js"
-cat > "$DST/remote-config.js" <<'JS'
-window.COD2_REMOTE_ASSETS = {
-  manifestUrl: '/play/assets.json',
-  baseUrl: '/'
-};
+for f in lobby.js brand-mark.png favicon.png apple-touch-icon.png; do
+  [[ -f "$SRC/$f" ]] || continue
+  install -m 644 "$SRC/$f" "$DST/$f"
+  install -m 644 "$SRC/$f" "$DST/r3/$f"
+done
+# Remote game assets are OFF by default: original game archives must not be
+# served from an open endpoint. Set PUBLISH_REMOTE_ASSETS=1 only for a pack
+# you have the right to distribute, or behind access control (see
+# docs/STAGE2_DELIVERY.md). Players otherwise load their own files.
+if [[ "${PUBLISH_REMOTE_ASSETS:-0}" == "1" ]]; then
+  REMOTE_ASSETS_JS="window.COD2_REMOTE_ASSETS = { manifestUrl: '/play/assets.json', baseUrl: '/' };"
+else
+  REMOTE_ASSETS_JS="/* remote assets disabled (PUBLISH_REMOTE_ASSETS!=1) */"
+fi
+cat > "$DST/remote-config.js" <<JS
+$REMOTE_ASSETS_JS
 window.COD2_MASTER_URL = '/play/api/masterlist/cod2/1.3';
 window.COD2_RELAY_URL = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/play/api/gamews';
 JS
@@ -64,6 +77,7 @@ cp -f "$DST/remote-config.js" "$DST/r3/remote-config.js"
 if [[ -f /tmp/cod2-game-relay-upload/relay.py ]]; then
   mkdir -p /opt/cod2-game-relay
   install -m 644 /tmp/cod2-game-relay-upload/relay.py /opt/cod2-game-relay/relay.py
+  install -m 644 /tmp/cod2-game-relay-upload/sessions.py /opt/cod2-game-relay/sessions.py
   if [[ -f /tmp/cod2-game-relay-upload/cod2-game-relay.service ]]; then
     install -m 644 /tmp/cod2-game-relay-upload/cod2-game-relay.service /etc/systemd/system/cod2-game-relay.service
     systemctl daemon-reload || true
