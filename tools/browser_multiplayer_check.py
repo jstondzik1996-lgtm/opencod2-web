@@ -20,6 +20,7 @@ import time
 import math
 import tempfile
 from playwright.sync_api import sync_playwright
+from browser_mp_redact import sanitize_test_log
 
 from contextlib import contextmanager
 
@@ -48,9 +49,7 @@ if not no_key:
 log = (root / 'multiplayer-test.log').open('w', encoding='utf-8', buffering=1)
 def emit(kind, value):
     text = json.dumps(dict(time=time.time(), kind=kind, value=value), ensure_ascii=False)
-    if key:
-        text = text.replace(key, '[redacted]').replace(key[:16], '[redacted]')
-    log.write(text + '\n')
+    log.write(sanitize_test_log(text, key) + '\n')
 def state(page):
     return page.evaluate('JSON.parse(Module.ccall("Web_TestClientState", "string", [], []))')
 def command(page, text):
