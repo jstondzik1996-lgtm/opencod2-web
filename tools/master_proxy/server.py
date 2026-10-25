@@ -45,8 +45,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 try:
     from directory import ConfigError, ServerDirectory, load_config
+    import sessions
 except ImportError:  # imported as tools.master_proxy.server
     from .directory import ConfigError, ServerDirectory, load_config
+    from . import sessions
 
 UPSTREAM = os.environ.get("COD2_MASTER_UPSTREAM", "https://api.cod.pm").rstrip("/")
 PORT = int(os.environ.get("PORT", "20711"))
@@ -96,6 +98,12 @@ class RateLimiter:
 
 
 _matchmake_limit = RateLimiter(MATCHMAKE_PER_MINUTE)
+_session_limit = RateLimiter(int(os.environ.get("COD2_SESSION_PER_MINUTE", "20")))
+
+# Player sessions (sessions.py). With a secret configured, Quick Play and
+# joins require a session and return a relay ticket for the chosen server.
+SIGNER = None
+BANS = sessions.BanList(os.environ.get("COD2_BANS_FILE") or None)
 
 _cache_lock = threading.Lock()
 _cache: dict[str, tuple[float, bytes, str]] = {}
@@ -305,6 +313,7 @@ class Handler(BaseHTTPRequestHandler):
                     "online": sum(1 for x in listed if x["status"] == "online"),
                     "sweeps": DIRECTORY.sweeps,
                 }
+            info["sessions"] = SIGNER is not None
             body = json.dumps(info).encode("utf-8")
             self._send(200, body, "application/json")
             return
@@ -392,11 +401,35 @@ class Handler(BaseHTTPRequestHandler):
             self.close_connection = True
             self._send(400, b'{"error":1,"description":"invalid JSON body"}\n', "application/json")
             return
-        if path == "/matchmake":
-            client = (self.headers.get("X-Forwarded-For") or self.client_address[0]).split(",")[0].strip()
+        client = (self.headers.get("X-Forwarded-For") or self.client_address[0]).split(",")[0].strip()
+        if path == "/session":
+            self._post_session(data, client)
+            return
+        if path in ("/matchmake", "/join"):
             if not _matchmake_limit.allow(client):
                 self._send(429, b'{"error":"rate_limited","retryAfter":60}\n', "application/json")
                 return
+            session = None
+            if SIGNER is not None:
+                try:
+                    session = SIGNER.verify(data.get("session"), "session")
+                except sessions.TokenError as exc:
+                    self._json(401, {"error": "session_required", "detail": str(exc)})
+                    return
+                if BANS.banned(session["pid"]):
+                    self._json(403, {"error": "banned"})
+                    return
+        if path == "/join":
+            pick, reason = DIRECTORY.reserve(str(data.get("serverId") or "")[:32])
+            if pick is None:
+                code = 404 if reason == "unknown" else 409
+                self._json(code, {"error": reason})
+                return
+            if session is not None:
+                pick["ticket"] = SIGNER.ticket(session, pick["connect"])
+            self._json(200, pick)
+            return
+        if path == "/matchmake":
             exclude = data.get("exclude") or []
             if not isinstance(exclude, list):
                 exclude = []
@@ -410,6 +443,8 @@ class Handler(BaseHTTPRequestHandler):
                         "online": online, "retryAfter": 10}
                 self._send(503, json.dumps(body).encode("utf-8"), "application/json")
                 return
+            if session is not None:
+                pick["ticket"] = SIGNER.ticket(session, pick["connect"])
             self._send(200, json.dumps(pick).encode("utf-8"), "application/json")
             return
         if path == "/matchmake/release":
@@ -417,6 +452,30 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, json.dumps({"released": ok}).encode("utf-8"), "application/json")
             return
         self._send(404, b'{"error":1,"description":"invalid route"}\n', "application/json")
+
+
+    def _json(self, code: int, obj: dict) -> None:
+        self._send(code, json.dumps(obj).encode("utf-8"), "application/json")
+
+    def _post_session(self, data: dict, client: str) -> None:
+        if SIGNER is None:
+            self._json(404, {"error": "sessions_disabled"})
+            return
+        if not _session_limit.allow(client):
+            self._json(429, {"error": "rate_limited", "retryAfter": 60})
+            return
+        nick = sessions.clean_nick(data.get("nick"))
+        key = data.get("playerKey")
+        if nick is None:
+            self._json(400, {"error": "bad_nick", "detail": "2-16 chars: letters, digits, _ - . [ ]"})
+            return
+        if not sessions.valid_player_key(key):
+            self._json(400, {"error": "bad_player_key"})
+            return
+        if BANS.banned(sessions.player_id(key)):
+            self._json(403, {"error": "banned"})
+            return
+        self._json(200, SIGNER.session(key, nick))
 
 
 def setup_directory(path: str) -> ServerDirectory:
@@ -430,7 +489,13 @@ def setup_directory(path: str) -> ServerDirectory:
 
 
 def main() -> None:
-    global DIRECTORY
+    global DIRECTORY, SIGNER
+    try:
+        SIGNER = sessions.signer_from_env()
+    except ValueError as exc:
+        raise SystemExit("COD2_SESSION_SECRET: %s" % exc)
+    if SIGNER is not None:
+        print("player sessions: on (relay tickets required)", flush=True)
     if SERVERS_FILE:
         try:
             DIRECTORY = setup_directory(SERVERS_FILE)

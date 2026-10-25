@@ -44,6 +44,10 @@ except ImportError:
     print("ERROR: pip install websockets  (>= 12.0)", file=sys.stderr)
     sys.exit(1)
 
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                "master_proxy"))
+import sessions  # noqa: E402  (tools/master_proxy/sessions.py)
+
 RELAY_PORT = int(os.environ.get("RELAY_PORT", "20712"))
 RELAY_HOST = os.environ.get("RELAY_HOST", "127.0.0.1")
 
@@ -146,9 +150,50 @@ class AllowList:
 
 _allowlist = AllowList()
 
+# With COD2_SESSION_SECRET the relay admits a WebSocket only with a valid join
+# ticket for exactly this server (issued by the master proxy) whose player id
+# is not banned. This is the project's own admission control; project servers
+# run in LAN mode behind the relay and never see a CD key.
+try:
+    SIGNER = sessions.signer_from_env()
+except ValueError as exc:
+    print("ERROR: COD2_SESSION_SECRET: %s" % exc, file=sys.stderr)
+    sys.exit(1)
+BANS = sessions.BanList(os.environ.get("COD2_BANS_FILE") or None)
+
+
+def check_ticket(params: dict, host: str, port: int):
+    """Returns the admitted player payload, or None when sessions are off.
+
+    A join ticket (from Quick Play / Join, bound to this server) is preferred.
+    A player session token is also accepted so that in-game reconnects and the
+    in-game server list keep working after the short ticket expired; the
+    target is still limited to directory servers by the allowlist and the
+    dedicated server still enforces its own slot limit."""
+    if SIGNER is None:
+        return None
+    tickets = params.get("ticket")
+    sessions_ = params.get("session")
+    try:
+        if tickets:
+            payload = SIGNER.verify(tickets[0], "ticket")
+            if payload.get("srv") != "%s:%d" % (host, port):
+                raise ValueError("ticket is for another server")
+        elif sessions_:
+            payload = SIGNER.verify(sessions_[0], "session")
+        else:
+            raise ValueError("join ticket or player session required")
+    except sessions.TokenError as exc:
+        raise ValueError("invalid ticket/session: %s" % exc) from None
+    if BANS.banned(payload["pid"]):
+        raise ValueError("player is banned")
+    return payload
+
 
 def parse_target(path: str, headers) -> tuple[str, int]:
-    """Extract host= and port= from the WS request URI query string."""
+    """Extract host= and port= from the WS request URI query string.
+
+    Also enforces the allowlist and, with sessions on, the join ticket."""
     qs = urllib.parse.urlparse(path).query
     params = urllib.parse.parse_qs(qs)
     host_list = params.get("host")
@@ -168,6 +213,7 @@ def parse_target(path: str, headers) -> tuple[str, int]:
         raise ValueError(
             f"{host}:{port} is not in the master list "
             f"(set COD2_RELAY_ALLOW_ANY=1 to skip the check)")
+    check_ticket(params, host, port)
     return host, port
 
 
@@ -255,9 +301,10 @@ async def main():
         ping_interval=20,
         ping_timeout=30,
     ):
-        log.info("cod2 game relay on ws://%s:%d/  (ports %d-%d, allowlist=%s)",
+        log.info("cod2 game relay on ws://%s:%d/  (ports %d-%d, allowlist=%s, tickets=%s)",
                  RELAY_HOST, RELAY_PORT, PORT_MIN, PORT_MAX,
-                 "off" if ALLOW_ANY else MASTERLIST_URL)
+                 "off" if ALLOW_ANY else MASTERLIST_URL,
+                 "required" if SIGNER else "off")
         try:
             await stop
         except asyncio.CancelledError:

@@ -24,6 +24,17 @@ Two independent blockers were on the bullet path; both are fixed in code, neithe
 2. `ClientEndFrame` never set `takedamage = 1` for living players, so every hit was discarded before damage. Fixed in `g_active_mp.c` (also viewmodelIndex and PM_DEAD selection).
 Asset-free tests: `tests/cm_world_link/run.sh`, `tests/dobj_trace/run.sh`, Python suite; all run in CI. Next proof needed: `tools/browser_multiplayer_check.py` on the local Windows stack.
 
+## Player sessions on project servers (P2, Claude 2026-10-25)
+
+Model: project dedicated servers run in the original game's LAN mode (`net_lanauthorize 0`, bound to `127.0.0.1` or a private address, UDP port NOT reachable from the Internet). Browsers reach them only through the project relay, so the server sees LAN clients and the client sees a LAN server: neither side contacts an external authorization service and no CD key is involved. Identity and admission are the project's own and are enforced at the relay:
+- `POST /play/api/session {nick, playerKey}`: the browser keeps a random `playerKey` in localStorage; `pid` = hash of it (stable guest id, nothing stored server-side). Nick is cleaned to `[A-Za-z0-9_-.[]]`, 2–16 chars (no userinfo/command injection).
+- `/matchmake` and `/join` require the session when `COD2_SESSION_SECRET` is set and return a 90 s join ticket bound to `ip:port`.
+- Relay admits a WebSocket only with a ticket for exactly that server, or a valid session token (in-game reconnect / in-game server list), and refuses banned pids (`COD2_BANS_FILE`, one pid per line, reloaded on change).
+- Lobby: nick field + "Graj"; passes `+set name <nick> +connect ip:port`; publishes `COD2_RELAY_TICKETS` / `COD2_RELAY_SESSION` for `src/web/web_net.js` (tokens are redacted in console logs).
+- Local: `python tools/serve_web_local.py --servers FILE --sessions` (random secret shared by master proxy and relay for that run). Production: set the same `COD2_SESSION_SECRET` (>=16 bytes) for both services.
+- Tests: `tools/test_sessions.py` (tokens, forgery/expiry, nick cleaning, bans, routes, relay admission), `tools/test_lobby_browser.py` (Chromium: nick required, session + ticket flow, full-server retry with a new ticket).
+- Pending on the real stack: verify that a browser with NO key in preferences joins a LAN-mode project server through the relay (expected from the code paths in `cl_main_mp.c`/`sv_client_mp.c`), and that the in-game name equals the lobby nick.
+
 ## Current blocker and next experiment (history)
 
 Player bullets hit world entity 1022 and did not damage the second player. Claude (2026-10-25, commit after 774cd3a) analysed and applied the paired fix:

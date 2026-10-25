@@ -352,14 +352,34 @@ class ServerDirectory:
                     best, best_key = e, key
             if best is None:
                 return None
-            token = secrets.token_urlsafe(12)
-            expires = now + self.reservation_ttl
-            self._reservations[token] = (best.id, expires)
-            reserved[best.id] = reserved.get(best.id, 0) + 1
-            result = self._public(best, reserved[best.id], now)
+            return self._reserve_locked(best, reserved, now)
+
+    def _reserve_locked(self, e: ServerEntry, reserved: dict, now: float) -> dict:
+        token = secrets.token_urlsafe(12)
+        self._reservations[token] = (e.id, now + self.reservation_ttl)
+        reserved[e.id] = reserved.get(e.id, 0) + 1
+        result = self._public(e, reserved[e.id], now)
         result["reservation"] = token
         result["expiresIn"] = int(self.reservation_ttl)
         return result
+
+    def reserve(self, server_id: str, include_private: bool = False):
+        """Reserves a slot on one named server (join from the list or a
+        private room). Returns (result, None) or (None, reason) with reason in
+        unknown / offline / full / password."""
+        now = self._clock()
+        with self._lock:
+            e = self._entries.get(server_id)
+            if e is None or (e.private and not include_private):
+                return None, "unknown"
+            if not self._is_online(e, now):
+                return None, "offline"
+            if e.password:
+                return None, "password"
+            reserved = self._reserved_locked(now)
+            if len(e.players) + reserved.get(server_id, 0) >= e.capacity:
+                return None, "full"
+            return self._reserve_locked(e, reserved, now), None
 
     def release(self, token: str) -> bool:
         with self._lock:

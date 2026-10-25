@@ -55,4 +55,12 @@ Upstream baseline: `c301dd6e8550c59a3fdd3081c73dc4ffd2c8602c`.
 - CI: hitbox test added; new MinGW i686 dedicated-server compile job; trigger paths now cover src/ and CMakeLists.
 - Pending (needs local Windows + game files): real two-client run of `tools/browser_multiplayer_check.py`. Expected now: `damage_to_other_player`, `target_died`, `target_respawned` true.
 
+## 2026-10-25 — Claude: P2 player sessions and join tickets (code + tests; real-stack check pending)
+
+- Finding: on project servers reached through the relay both client (`CL_CheckForResend`) and server (`SV_GetChallenge`) take the original LAN path with `net_lanauthorize 0`, so no CD key or external authorization is used. Design documented in HANDOFF ("Player sessions").
+- Files: `tools/master_proxy/{sessions.py,server.py,directory.py}`, `tools/game_proxy/relay.py`, `tools/serve_web_local.py`, `src/web/{lobby.js,web_net.js}`, tests `tools/test_sessions.py`, `tools/test_lobby_browser.py`.
+- Bug caught by the new browser test and fixed: nick input maxlength cut the raw text before colour codes were removed.
+- Results: 29 Python tests OK locally. CI run for 07f4215: WASM build, Chromium lobby, Python and i386 harness jobs passed (MinGW job pending at the time of writing).
+- Next: P1 multi-instance helper and concurrency tests; P3 performance review.
+
 See `HANDOFF.md` for exact endpoints, build steps, limitations and next work. This checkpoint does not establish working combat.

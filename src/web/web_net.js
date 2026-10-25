@@ -37,8 +37,44 @@
       }
     }
     var sep = (base.indexOf('?') >= 0) ? '&' : '?';
-    return base + sep + 'host=' + encodeURIComponent(ip) +
-           '&port=' + encodeURIComponent(port);
+    var url = base + sep + 'host=' + encodeURIComponent(ip) +
+              '&port=' + encodeURIComponent(port);
+    /* Project servers: the lobby stores a join ticket per "ip:port"
+     * (COD2_RELAY_TICKETS); the relay admits the session only with it. */
+    var ticket = relayTicket(ip + ':' + port);
+    if (ticket) {
+      url += '&ticket=' + encodeURIComponent(ticket);
+    } else {
+      /* Fallback for reconnects / in-game server list: the player session. */
+      var session = relayScopeValue('COD2_RELAY_SESSION');
+      if (session) url += '&session=' + encodeURIComponent(session);
+    }
+    return url;
+  }
+
+  function relayScopeValue(name) {
+    var scopes = [];
+    try { if (typeof Module !== 'undefined') scopes.push(Module); } catch (e) {}
+    try { if (typeof globalThis !== 'undefined') scopes.push(globalThis); } catch (e) {}
+    for (var i = 0; i < scopes.length; i++) {
+      try {
+        if (typeof scopes[i][name] === 'string' && scopes[i][name]) return scopes[i][name];
+      } catch (e) {}
+    }
+    return '';
+  }
+
+  function relayTicket(key) {
+    var scopes = [];
+    try { if (typeof Module !== 'undefined') scopes.push(Module); } catch (e) {}
+    try { if (typeof globalThis !== 'undefined') scopes.push(globalThis); } catch (e) {}
+    for (var i = 0; i < scopes.length; i++) {
+      try {
+        var map = scopes[i].COD2_RELAY_TICKETS;
+        if (map && typeof map[key] === 'string' && map[key]) return map[key];
+      } catch (e) {}
+    }
+    return '';
   }
 
   /* ---- session state ---- */
@@ -83,7 +119,7 @@
 
     var url = relayUrl(ipStr(ip), displayPort);
     if (typeof console !== 'undefined')
-      console.log('[cod2-net] connecting relay', url);
+      console.log('[cod2-net] connecting relay', url.replace(/([?&](?:ticket|session)=)[^&]*/g, '$1[redacted]'));
 
     try {
       ws = new WebSocket(url);

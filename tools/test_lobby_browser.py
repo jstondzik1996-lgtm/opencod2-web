@@ -20,6 +20,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'mas
 
 import directory  # noqa: E402
 import server as master  # noqa: E402
+import sessions  # noqa: E402
 import serve_web_local as web  # noqa: E402
 from test_server_directory import FakeCod2Server, entry, free_udp_port  # noqa: E402
 
@@ -88,7 +89,9 @@ class LobbyBrowserTests(unittest.TestCase):
             response_window=0.5)
         self.dir.poll_once()
         self.old_dir = master.DIRECTORY
+        self.old_signer = master.SIGNER
         master.DIRECTORY = self.dir
+        master.SIGNER = None
         self.master = ThreadingHTTPServer(('127.0.0.1', 0), master.Handler)
         self.master.daemon_threads = True
         threading.Thread(target=self.master.serve_forever, daemon=True).start()
@@ -104,6 +107,7 @@ class LobbyBrowserTests(unittest.TestCase):
             s.shutdown()
             s.server_close()
         master.DIRECTORY = self.old_dir
+        master.SIGNER = self.old_signer
         web.CFG.clear()
         web.CFG.update(self.old_cfg)
         self.a.close()
@@ -111,6 +115,26 @@ class LobbyBrowserTests(unittest.TestCase):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def test_quick_play_boots_with_connect_and_retries_full_server(self):
+        self._quick_play_flow(sessions_on=False)
+
+    def test_quick_play_with_player_sessions(self):
+        master.SIGNER = sessions.Signer('browser-test-secret-0123456789')
+        self._quick_play_flow(sessions_on=True)
+
+    def test_nick_required(self):
+        with sync_playwright() as p:
+            browser = p.chromium.launch()
+            page = browser.new_page()
+            page.goto(self.url)
+            page.wait_for_selector('#lobby .lobby-row', timeout=20000)
+            page.fill('#lobbyNick', '^1')
+            page.click('#lobbyQuick')
+            page.wait_for_function('document.querySelector("#lobby .lobby-status").textContent.length > 0')
+            self.assertIn('nick', page.inner_text('#lobby .lobby-status').lower())
+            self.assertEqual(self.dir.list_servers()[0]['reserved'], 0, 'no reservation without a nick')
+            browser.close()
+
+    def _quick_play_flow(self, sessions_on):
         with sync_playwright() as p:
             browser = p.chromium.launch()
             page = browser.new_page()
@@ -131,6 +155,7 @@ class LobbyBrowserTests(unittest.TestCase):
                 page.set_viewport_size({'width': 1280, 'height': 900})
                 page.screenshot(path=os.environ['COD2_LOBBY_SCREENSHOT'])
 
+            page.fill('#lobbyNick', '^2Sgt ^7Kowal ski')
             # Use the no-File-System-Access fallback so the test can supply a folder.
             page.evaluate('Cod2Fs.hasFsAccess = function () { return false; }')
             with page.expect_file_chooser() as fc:
@@ -138,14 +163,30 @@ class LobbyBrowserTests(unittest.TestCase):
             fc.value.set_files(self.game)
             page.wait_for_function('window.__engine.args !== null', timeout=10000)
             args = page.evaluate('window.__engine.args')
-            self.assertEqual(args[-2:], ['+connect', '127.0.0.1:%d' % self.a.port])
+            a_addr = '127.0.0.1:%d' % self.a.port
+            b_addr = '127.0.0.1:%d' % self.b.port
+            self.assertEqual(args[-5:], ['+set', 'name', 'Sgt_Kowal_ski', '+connect', a_addr])
             self.assertEqual(self.dir.list_servers()[0]['reserved'], 1)
+            tickets = page.evaluate('window.COD2_RELAY_TICKETS || {}')
+            relay_session = page.evaluate('window.COD2_RELAY_SESSION || ""')
+            if sessions_on:
+                t = master.SIGNER.verify(tickets[a_addr], 'ticket')
+                self.assertEqual((t['srv'], t['nick']), (a_addr, 'Sgt_Kowal_ski'))
+                self.assertEqual(master.SIGNER.verify(relay_session, 'session')['pid'], t['pid'])
+                key = page.evaluate('localStorage.getItem("cod2web.playerKey")')
+                self.assertEqual(t['pid'], sessions.player_id(key), 'persistent guest identity')
+            else:
+                self.assertEqual((tickets, relay_session), ({}, ''))
+            self.assertEqual(page.evaluate('localStorage.getItem("cod2web.nick")'), 'Sgt_Kowal_ski')
 
             # Server A refuses as full: the lobby must exclude it and go to B
             # through the narrow engine export, without restarting the engine.
             page.evaluate('window.cod2LobbyOnLine("EXE_SERVERISFULL")')
             page.wait_for_function('window.__engine.connects.length === 1', timeout=5000)
-            self.assertEqual(page.evaluate('window.__engine.connects'), ['127.0.0.1:%d' % self.b.port])
+            self.assertEqual(page.evaluate('window.__engine.connects'), [b_addr])
+            if sessions_on:
+                tickets = page.evaluate('window.COD2_RELAY_TICKETS')
+                self.assertEqual(master.SIGNER.verify(tickets[b_addr], 'ticket')['srv'], b_addr)
             reserved = {s['id']: s['reserved'] for s in self.dir.list_servers()}
             self.assertEqual(reserved, {'a': 0, 'b': 1, 'dead': 0}, 'A reservation released')
             self.assertIn('Łączenie', page.inner_text('#lobby .lobby-status'))

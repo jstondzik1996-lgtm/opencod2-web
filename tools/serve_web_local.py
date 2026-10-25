@@ -20,6 +20,7 @@ Optional:
   python tools/serve_web_local.py --port 8080 --coop
   python tools/serve_web_local.py --root path/to/web --no-spawn
   python tools/serve_web_local.py --servers tools/master_proxy/servers.local.json
+  python tools/serve_web_local.py --servers tools/master_proxy/servers.local.json --sessions
 
 COOP/COEP: off by default (MEMFS). Pass --coop for pthread / WASMFS / WORKERFS
 (SharedArrayBuffer). Cross-origin isolation is not required for the default build.
@@ -126,7 +127,13 @@ def _wait_port(host: str, port: int, seconds: float, label: str) -> bool:
     return False
 
 
-def spawn_backends(master_port: int, relay_port: int, servers_file: str | None = None) -> None:
+def spawn_backends(master_port: int, relay_port: int, servers_file: str | None = None,
+                   sessions: bool = False) -> None:
+    if sessions and not os.environ.get("COD2_SESSION_SECRET"):
+        # Master proxy (issues tickets) and relay (checks them) share it.
+        import secrets
+        os.environ["COD2_SESSION_SECRET"] = secrets.token_urlsafe(32)
+        print("player sessions: on (random secret for this run)", flush=True)
     if not _port_open(MASTER_HOST, master_port):
         env = os.environ.copy()
         env["PORT"] = str(master_port)
@@ -465,6 +472,8 @@ def main() -> None:
     parser.add_argument("--relay-port", type=int, default=DEFAULT_RELAY_PORT)
     parser.add_argument("--servers", default=os.environ.get("COD2_SERVERS_FILE"),
                         help="project server directory JSON for the spawned master proxy")
+    parser.add_argument("--sessions", action="store_true",
+                        help="require player sessions/join tickets (generates COD2_SESSION_SECRET if unset)")
     parser.add_argument("--no-spawn", action="store_true",
                         help="do not start server.py / relay.py (they must already be listening)")
     parser.add_argument("--coop", action="store_true",
@@ -480,7 +489,7 @@ def main() -> None:
     })
 
     if not args.no_spawn:
-        spawn_backends(args.master_port, args.relay_port, args.servers)
+        spawn_backends(args.master_port, args.relay_port, args.servers, args.sessions)
 
     httpd = ThreadingHTTPServer((args.bind, args.port), Handler)
     url = "http://%s:%d/cod2.html" % (args.bind, args.port)
