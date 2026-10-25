@@ -1,5 +1,15 @@
 # Work log
 
+## 2026-10-25 — ChatGPT: stale-server guard and asset-free CI on shared branch
+
+- Continued the existing Work/Claude project directly through GitHub; **no new repository/fork** and no modifications to local Windows preview.
+- `tools/master_proxy/directory.py`: reads of server list, in-game masterlist and Quick Play now reject servers whose last successful UDP status heartbeat has exceeded `stale_after`, even if the poller thread has stalled. Former implementation only recomputed `online` during `poll_once`, potentially advertising a dead instance indefinitely.
+- `tools/test_server_directory.py`: regression for stopped poller, stale server rejection and recovery after fresh poll.
+- `.github/workflows/browser-mp-regressions.yml`: asset-free Python suite and 32-bit native `cm_world.c` sector-list test automatically run for relevant commits. This is distinct from the full multiplayer two-client combat test.
+- GitHub commits: `dfd13c9` (directory), `3e2593c` (test), `38fec08` (CI).
+- CI execution status was **queued** when this note was written; not claiming tests passed. Real Windows/Emscripten build and two-client damage integration remain **NOT VERIFIED** because no local machine access.
+- Next step after CI: inspect job results, repair any regression if the jobs fail. When local access returns, perform P0 on isolated ports as in HANDOFF, then P1 real two-server lobby test.
+
 ## 2026-10-25 — Codex: shared collaboration instruction
 
 The user explicitly wants Work, Codex and Claude to implement together on the same project and shared `codex/browser-mp-checkpoint` branch. The earlier review-only instruction for ChatGPT is superseded. No assistant-specific branches are requested. Sync incoming changes, preserve each other's edits, and record stages/results here. Current technical next step remains the paired collision contents/entity-index investigation described in HANDOFF.md; this documentation change does not claim a combat fix.
