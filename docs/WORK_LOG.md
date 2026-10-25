@@ -1,5 +1,14 @@
 # Work log
 
+## 2026-10-25 — ChatGPT: keyless / guest-session P0 test mode after local preview started
+
+- User confirmed their local browser preview works at `http://127.0.0.1:8081/cod2.html`. This **cannot be remotely inspected** from ChatGPT: 127.0.0.1 points at the user's own machine. The last documented Windows two-client test on e49bf6d **failed damage/death/respawn**, and `CM_TraceBox` has since been fixed in 19253db; **a new real run is still required**.
+- Existing Windows-only `tools/browser_multiplayer_check.py` always read the installed CD-Key from the registry. Added optional `COD2_TEST_NO_KEY=1`: skip reading registry and avoid inserting any CD-Key into browser preferences. It uses a fresh temporary browser profile so no previous credential can mask a broken keyless path (commit `33d451c`).
+- Optional `COD2_TEST_SESSION=1` **requires** `COD2_TEST_NO_KEY=1` and a configured project directory + `--sessions` backend. Each browser client now receives its own randomly generated guest identity, project session and server-bound `/join` ticket. Ticket and session are forwarded only in browser memory to the WS relay, not written to logs or JSON. Reconnect uses the session. This is a *test feature* for the project's own private LAN-mode instances; it does not grant access to third-party servers (commit `24b539f`).
+- CI now syntax-checks the Windows integration harness independently of the user's machine (`0fb7722`), in addition to the established Python, Chromium lobby, 32-bit collision and WASM/MinGW compile jobs. **These automated tests do not run two real game clients**. Await CI results for the latest keyless changes and a Windows test before claiming P0 PASS.
+- No modifications to the user's running 8081 server, game archives, CD-Key or local browser profile; all code changes were made directly on the shared `codex/browser-mp-checkpoint` GitHub branch.
+
+
 ## 2026-10-25 — ChatGPT: stale-server guard and asset-free CI on shared branch
 
 - Continued the existing Work/Claude project directly through GitHub; **no new repository/fork** and no modifications to local Windows preview.
