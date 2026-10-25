@@ -8,6 +8,9 @@ Windows-only (default: reads the installed key from the registry and redacts
 it from logs). Set COD2_TEST_NO_KEY=1 to test a clean browser with no CD-Key
 in its preferences against a project-owned LAN-mode server. No-key mode uses a
 fresh browser profile to avoid silently reusing credentials from prior runs.
+Set COD2_TEST_SESSION=1 along with NO_KEY to acquire a guest session and a
+server-bound join ticket from the project's own /play/api endpoints (the
+server directory and --sessions must be enabled for this option).
 """
 import json
 import os
@@ -30,6 +33,9 @@ root.mkdir(parents=True, exist_ok=True)
 url = os.environ.get('COD2_TEST_URL', 'http://127.0.0.1:8081/cod2.html')
 server = os.environ.get('COD2_TEST_SERVER', '127.0.0.1:28961')
 no_key = os.environ.get('COD2_TEST_NO_KEY', '').strip().lower() in ('1', 'true', 'yes')
+session_mode = os.environ.get('COD2_TEST_SESSION', '').strip().lower() in ('1', 'true', 'yes')
+if session_mode and not no_key:
+    raise RuntimeError('COD2_TEST_SESSION requires COD2_TEST_NO_KEY=1')
 key = None
 if not no_key:
     # Never read the installed CD-Key when explicitly testing project-owned
@@ -71,6 +77,38 @@ with tempfile.TemporaryDirectory(prefix='cod2-no-key-profile-', dir=root) if no_
             page.evaluate('async () => { await Cod2Fs.ingestRemote({manifestUrl:"assets.json",baseUrl:"/"}); }')
             page.reload(wait_until='domcontentloaded')
         page.wait_for_function('!document.getElementById("beginBtn").disabled', timeout=60000)
+        if session_mode:
+            # A private-session test must be authorized by OUR master and relay.
+            # Use a different randomly generated guest identity per browser page.
+            # Do not log the guest key, session token or server-bound join ticket.
+            admission = page.evaluate("""async data => {
+              const keyBytes = crypto.getRandomValues(new Uint8Array(24));
+              const playerKey = btoa(String.fromCharCode(...keyBytes))
+                .replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');
+              async function post(path, payload) {
+                const response = await fetch('/play/api/' + path, {
+                  method: 'POST', headers: {'Content-Type':'application/json'},
+                  body: JSON.stringify(payload)
+                });
+                if (!response.ok) throw new Error(path + ': HTTP ' + response.status);
+                return response.json();
+              }
+              const session = await post('session', {nick: data.name, playerKey});
+              const serversResponse = await fetch('/play/api/servers');
+              if (!serversResponse.ok) throw new Error('servers: HTTP ' + serversResponse.status);
+              const servers = (await serversResponse.json()).servers || [];
+              const target = servers.find(s => s.connect === data.server);
+              if (!target) throw new Error('configured server not in project directory: ' + data.server);
+              const joined = await post('join', {session: session.token, serverId: target.id});
+              if (joined.connect !== data.server || !joined.ticket)
+                throw new Error('join did not return the expected server/ticket');
+              window.COD2_RELAY_SESSION = session.token;
+              window.COD2_RELAY_TICKETS = {[data.server]: joined.ticket};
+              Module.COD2_RELAY_SESSION = session.token;
+              Module.COD2_RELAY_TICKETS = window.COD2_RELAY_TICKETS;
+              return {server: data.server, nick: session.nick, ticketPresent: true};
+            }""", dict(name='Browser' + str(index + 1), server=server))
+            emit('admission' + str(index), admission)
         page.evaluate('data => {const orig = Module.callMain; Module.callMain = function(args) {FS.mkdirTree("/cod2home/.cod2"); if (data.key) FS.writeFile("/cod2home/.cod2/preferences", "codkey="+data.key+"\\n"); return orig(args.concat(["+set","name",data.name,"+set","net_lanauthorize","0","+connect",data.server]));};}', dict(key=key, name='Browser' + str(index + 1), server=server))
         page.locator('#beginBtn').click()
         for attempt in range(50):
@@ -228,7 +266,9 @@ with tempfile.TemporaryDirectory(prefix='cod2-no-key-profile-', dir=root) if no_
         'server_alive_after_reconnect': still_alive_after_reconnect,
     }
     emit('checks', checks)
-    (root / 'multiplayer-result.json').write_text(json.dumps(dict(key_mode='none' if no_key else 'installed-key', checks=checks, movements=movement_results, fire=fire_results, duel=dict(before=duel_before, after=duel_after), lifecycle=lifecycle), indent=2))
+    (root / 'multiplayer-result.json').write_text(json.dumps(dict(key_mode='none' if no_key else 'installed-key',
+                                                      admission_mode='project-session' if session_mode else 'direct-LAN',
+                                                      checks=checks, movements=movement_results, fire=fire_results, duel=dict(before=duel_before, after=duel_after), lifecycle=lifecycle), indent=2))
     print('Checks', checks, flush=True)
     for index, page in enumerate(pages):
         emit('final' + str(index), state(page))
