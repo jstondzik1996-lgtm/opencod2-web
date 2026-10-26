@@ -1,5 +1,16 @@
 # CoD2 browser multiplayer handoff
 
+## Aktualizacja 2026-10-26 — automatyczne testy prawdziwej gry
+
+Nowy nadzorca: `tools/run_browser_game_test.py`; instrukcja po polsku: [AUTOMATYCZNE_TESTY_GRY](docs/AUTOMATYCZNE_TESTY_GRY.md). BAT po osobnej kompilacji uruchamia teraz automatycznie cały izolowany zestaw usług i harness dwóch klientów. Dla PR przed scaleniem ustaw `COD2_QA_BRANCH=codex/automated-game-tests`.
+
+Raporty: `raport.md`, `raport.json`, logi usług, migawki, pomiar klatek WebGL, błędy zasobów/awarii, kody wyjścia procesów i dostępne screenshoty. Brak wykonanego etapu oznacza NIE_WYKONANO, a wynik całego niepełnego przebiegu pozostaje FAIL. Watchdog działa poza przeglądarką i wykrywa także wiszące page.evaluate oraz brak odpowiedzi UDP.
+
+Zweryfikowano 33 testy infrastruktury/anonimizacji i kontrolę plików starszego lokalnego buildu f0dc2fea5c (WASM/MZ, 5 plików manifestu, indeksy 1533 modeli i 4369 materiałów). Serwer po przekazaniu fixture przez argumenty doszedł do inicjalizacji trybu gry. **Pełnego przebiegu dwóch klientów, trafień, respawnu ani FPS nie potwierdzono**: kontrola gotowości usług zakończyła się FAIL w ograniczonym środowisku. Nie zmieniono kodu renderera ani obrażeń. Zielone testy infrastruktury nie dowodzą poprawnej rozgrywki.
+
+Niniejsze zadanie zgodnie z nowym poleceniem właściciela pracuje na osobnej gałęzi i trafia do PR; starsza instrukcja o bezpośrednim wspólnym push nie dotyczy tego zakresu.
+
+
 Updated: 2026-10-25 (Claude: collision fix + project server directory, lobby and Quick Play; combat integration still pending). This is an unfinished port, not a finished multiplayer release.
 
 ## Goal and boundaries
