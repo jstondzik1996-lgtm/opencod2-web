@@ -52,6 +52,10 @@ jobs:
         run: sh tests/dobj_trace/run.sh
       - name: Compile and run entity box early-out (CM_TraceBox)
         run: sh tests/trace_box/run.sh
+      - name: Compile and run WebGL2 compat layer against a fake GL context
+        run: sh tests/webgl2_compat/run.sh
+      - name: Compile and run texture / vertex colour byte-order checks
+        run: sh tests/texture_colors/run.sh
 
   win32-server-compilation:
     name: MinGW i686 dedicated server build (no game assets)

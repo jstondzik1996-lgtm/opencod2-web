@@ -2,6 +2,9 @@
 #include "imports.h"
 #include <stdlib.h>
 #include <string.h>
+#ifdef __EMSCRIPTEN__
+#include "web/webgl2_native.h"
+#endif
 typedef void (*fnptr_t)(void);
 extern fnptr_t vtbl_CDirect3DIndexBuffer[];
 
@@ -49,6 +52,10 @@ void ZN20CDirect3DIndexBufferD1Ev(const CDirect3DIndexBuffer *_this)
 {
     CDirect3DIndexBufferClean *ib = (CDirect3DIndexBufferClean *)_this;
     ib->vtable = vtbl_CDirect3DIndexBuffer;
+#ifdef __EMSCRIPTEN__
+    if (ib->data)
+        webgl2_buffer_released(ib->data);
+#endif
     free(ib->data);
     ib->data = NULL;
 }
@@ -67,6 +74,10 @@ HRESULT CDirect3DIndexBuffer_Lock(const CDirect3DIndexBuffer *_this, UINT Offset
     ib->lockSize = SizeToLock ? SizeToLock : ib->lengthBytes;
     ib->lockPtr = ib->data + OffsetToLock;
     *ppbData = ib->lockPtr;
+#ifdef __EMSCRIPTEN__
+    /* The GL mirror of this buffer must re-upload whatever the caller writes. */
+    webgl2_buffer_written(ib->data, OffsetToLock, SizeToLock);
+#endif
     return 0;
 }
 

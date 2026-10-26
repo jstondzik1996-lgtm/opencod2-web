@@ -1461,6 +1461,18 @@
       locateFile: function (path, prefix) {
         return (prefix || '') + path + '?v=' + ENGINE_ASSET_VER;
       },
+      /* Renderer switches for A/B tests: ?glLegacy=1 (old CPU vertex path),
+       * ?glStats=1 (print [gl-stats] every 300 frames), ?glReupload=1. */
+      preRun: [function () {
+        try {
+          var q = new URLSearchParams(location.search);
+          var env = window.Module && window.Module.ENV;
+          if (!env) return;
+          if (q.get('glLegacy') === '1') env.COD2_GL_LEGACY = '1';
+          if (q.get('glStats') === '1') env.COD2_GL_STATS = '1';
+          if (q.get('glReupload') === '1') env.COD2_GL_REUPLOAD = '1';
+        } catch (e) {}
+      }],
       print: function (t) { onEngineLine(t, false); },
       printErr: function (t) { onEngineLine(t, true); },
       onRuntimeInitialized: function () {

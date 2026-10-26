@@ -6,6 +6,7 @@
 #    include <SDL2/SDL.h>
 #    include <stdio.h>
 #    include "web/webgl2_compat.h"
+#    include "web/webgl2_native.h"
 int g_dip_world44 = 0;
 int g_dip_world44_nostream = 0;
 int g_dip_world44_novb = 0;
@@ -491,13 +492,21 @@ static const D3DVERTEXELEMENT9 *CDirect3DDevice_FindVertexElement(
     return NULL;
 }
 
+/*
+ * Converts the colours of vertices [firstVertex, firstVertex + numVertices)
+ * into an RGBA scratch array indexed by the same vertex numbers (entries
+ * below firstVertex are left untouched; the draw never references them).
+ * Converting from vertex 0 wasted work for draws at the end of a buffer.
+ */
 static const byte *CDirect3DDevice_ConvertColorArray(const byte *vertBase, UINT stride,
-                                                     int colorOffset, UINT vertexCount, int byteOrder)
+                                                     int colorOffset, UINT firstVertex, UINT numVertices,
+                                                     int byteOrder)
 {
     UINT i;
     UINT bytesNeeded;
+    UINT vertexCount = firstVertex + numVertices;
 
-    if (colorOffset < 0 || vertexCount == 0)
+    if (colorOffset < 0 || numVertices == 0 || vertexCount < firstVertex)
         return NULL;
 
     bytesNeeded = vertexCount * 4;
@@ -509,7 +518,7 @@ static const byte *CDirect3DDevice_ConvertColorArray(const byte *vertBase, UINT 
         g_colorArrayScratchCapacity = bytesNeeded;
     }
 
-    for (i = 0; i < vertexCount; ++i) {
+    for (i = firstVertex; i < vertexCount; ++i) {
         const byte *src = vertBase + i * stride + colorOffset;
         byte *dst = g_colorArrayScratch + i * 4;
 
@@ -1071,6 +1080,39 @@ static unsigned int CDirect3DDevice_GetImageGLId(GfxImage *image)
     CDirect3DDevice_UpdateTextureIfNeeded(texture);
     return CDirect3DDevice_GetTextureGLId(texture);
 }
+
+#ifdef __EMSCRIPTEN__
+unsigned int g_web_stage0_noncolor_fallbacks = 0;
+
+/*
+ * The fixed-function web path samples exactly one colour texture on stage 0.
+ * When a material has no usable colour map, the old code fell back to
+ * whatever the HLSL technique had bound to sampler 0, which is frequently a
+ * code texture such as $identitynormalmap (0x80,0x80,0xFF) or $specularity.
+ * Drawn as diffuse that is the flat lilac/purple seen on some surfaces.
+ * Substitute $white so the surface keeps its vertex colour/lighting instead.
+ */
+static IDirect3DBaseTexture9 *CDirect3DDevice_FilterStage0Fallback(IDirect3DBaseTexture9 *texture)
+{
+    extern r_global_permanent_t rgp;
+    GfxImage *candidates[2];
+    int i;
+
+    if (!texture)
+        return texture;
+    candidates[0] = rgp.identityNormalMapImage;
+    candidates[1] = rgp.specularityImage;
+    for (i = 0; i < 2; ++i) {
+        if (candidates[i] && candidates[i]->texture.basemap == texture) {
+            g_web_stage0_noncolor_fallbacks++;
+            if (rgp.whiteImage && rgp.whiteImage->texture.basemap)
+                return rgp.whiteImage->texture.basemap;
+            return NULL;
+        }
+    }
+    return texture;
+}
+#endif
 
 ULONG CDirect3DDevice_AddRef(const CDirect3DDevice *_this)
 {
@@ -1662,6 +1704,9 @@ HRESULT CDirect3DDevice_Present(const CDirect3DDevice *_this, const RECT *pSourc
     if (sdl_gl_window) {
         SDL_GL_SwapWindowDirect();
     }
+#ifdef __EMSCRIPTEN__
+    webgl2_frame_end();
+#endif
     return 0;
 }
 
@@ -1753,7 +1798,19 @@ HRESULT CDirect3DDevice_DrawIndexedPrimitive(const CDirect3DDevice *_this,
             colorOffset = 0x18;
             texOffset = 0x1c;
             lightmapOffset = -1;
-            colorByteOrder = COLOR_BYTES_ARGB;
+            /*
+             * Both static-model cache writers (r_staticmodelcache.c) first put
+             * the XSurface colour into the engine's "native" A,R,G,B byte
+             * layout (same as R_ConvertColorToBytes) and then run it through
+             * CColorConverter (StdConverterARGB = 32-bit byte swap), exactly
+             * like RB_SetVertexData does for every dynamic stream. On a
+             * little-endian heap that leaves B,G,R,A bytes in the buffer.
+             * Decoding it as ARGB put the vertex alpha (normally 255) into the
+             * blue channel and the blue channel into alpha: non-white static
+             * models (halftrack, crates, foliage) came out blue/purple and
+             * alpha-tested foliage lost texels.
+             */
+            colorByteOrder = COLOR_BYTES_BGRA;
         }
     } else if (stride == 0x24) {
         normalOffset = 0x0c;
@@ -1802,10 +1859,15 @@ HRESULT CDirect3DDevice_DrawIndexedPrimitive(const CDirect3DDevice *_this,
     }
 #endif
 
+#ifndef __EMSCRIPTEN__
     {
         extern void glBindVertexArray(unsigned int);
         glBindVertexArray(0);
     }
+#else
+    /* webgl2_compat owns the VAO bindings (legacy and native layouts). */
+    webgl2_set_lighting_allowed(!is2D);
+#endif
     glActiveTextureARB(GL_TEXTURE0_ARB);
     glClientActiveTextureARB(GL_TEXTURE0_ARB);
     if (!usesLightmap) {
@@ -1818,7 +1880,13 @@ HRESULT CDirect3DDevice_DrawIndexedPrimitive(const CDirect3DDevice *_this,
             GLuint vsId = (!is2D && g_activeVertexShader)
                               ? *(GLuint *)((char *)g_activeVertexShader + 4)
                               : 0;
-            int useProg = vsId && dev->pixelShader && getenv("D3D_PROG");
+            static int s_d3dProgEnv = -1;
+            int useProg;
+
+            /* getenv walks the environment list; this runs for every draw. */
+            if (s_d3dProgEnv < 0)
+                s_d3dProgEnv = getenv("D3D_PROG") ? 1 : 0;
+            useProg = vsId && dev->pixelShader && s_d3dProgEnv;
             if (useProg) {
                 glEnable(0x8620 );
                 glBindProgramARB(0x8620, vsId);
@@ -2008,9 +2076,13 @@ HRESULT CDirect3DDevice_DrawIndexedPrimitive(const CDirect3DDevice *_this,
             }
 #endif
             if (!glTexID) {
-                CDirect3DDevice_UpdateTextureIfNeeded(g_boundTextures[0]);
-                glTexID = CDirect3DDevice_GetTextureGLId(g_boundTextures[0]);
-                stage0Target = CDirect3DDevice_GetTextureTarget(g_boundTextures[0]);
+                IDirect3DBaseTexture9 *stage0Texture = g_boundTextures[0];
+#ifdef __EMSCRIPTEN__
+                stage0Texture = CDirect3DDevice_FilterStage0Fallback(stage0Texture);
+#endif
+                CDirect3DDevice_UpdateTextureIfNeeded(stage0Texture);
+                glTexID = CDirect3DDevice_GetTextureGLId(stage0Texture);
+                stage0Target = CDirect3DDevice_GetTextureTarget(stage0Texture);
             }
             if (!glTexID) {
                 glTexID = g_prebind_texID;
@@ -2091,6 +2163,52 @@ HRESULT CDirect3DDevice_DrawIndexedPrimitive(const CDirect3DDevice *_this,
         glDisable(0x0BE2);
     }
 
+    glActiveTextureARB(GL_TEXTURE0_ARB);
+    glMatrixMode(0x1702);
+    if (g_textureStageState[0][D3DTSS_TEXTURETRANSFORMFLAGS] != D3DTTFF_DISABLE)
+        glLoadMatrixf(dev->texMatrix);
+    else
+        glLoadIdentity();
+    glMatrixMode(0x1700);
+
+    indexCount = primCount * 3;
+
+#ifdef __EMSCRIPTEN__
+    /*
+     * Native path: let the GPU read the Direct3D vertex layout from mirrored
+     * GL buffers (uploaded once, then only the Lock()ed byte ranges) instead
+     * of converting every vertex to floats on the CPU for every draw.
+     * Falls back to the client-array path below when the layout cannot be
+     * expressed (or COD2_GL_LEGACY is set for A/B testing).
+     */
+    {
+        WebGL2NativeDraw nd;
+
+        nd.vb_base = vbData;
+        nd.vb_size = *(UINT32 *)((byte *)dev->streams[0] + 8);
+        nd.ib_base = ibData;
+        nd.ib_size = *(UINT32 *)((byte *)dev->indexBuffer + 8);
+        nd.base_offset = offset + (UINT)BaseVertexIndex * stride;
+        nd.stride = (int)stride;
+        nd.pos_offset = positionOffset;
+        nd.pos_components = positionComponents;
+        nd.color_offset = colorOffset;
+        nd.color_order = colorByteOrder == COLOR_BYTES_RGBA   ? WEBGL2_COLOR_RGBA
+                         : colorByteOrder == COLOR_BYTES_ARGB ? WEBGL2_COLOR_ARGB
+                                                              : WEBGL2_COLOR_BGRA;
+        nd.tex0_offset = texOffset;
+        nd.tex1_offset = (usesLightmap && lightmapOffset >= 0) ? lightmapOffset : -1;
+        nd.min_vertex = MinVertexIndex;
+        nd.num_vertices = NumVertices;
+        nd.index_offset = startIndex * 2;
+        nd.index_count = indexCount;
+        if (BaseVertexIndex >= 0 && webgl2_draw_native(&nd)) {
+            CDirect3DDevice_DisableExtraTextureUnits();
+            return 0;
+        }
+    }
+#endif
+
     glEnableClientState(0x8074);
     glVertexPointer(positionComponents, 0x1406 , stride,
                     vertBase + positionOffset);
@@ -2098,7 +2216,7 @@ HRESULT CDirect3DDevice_DrawIndexedPrimitive(const CDirect3DDevice *_this,
     {
         if (usesLightmap) {
             const byte *colors = CDirect3DDevice_ConvertColorArray(
-                vertBase, stride, colorOffset, MinVertexIndex + NumVertices,
+                vertBase, stride, colorOffset, MinVertexIndex, NumVertices,
                 colorByteOrder);
 
             glEnableClientState(0x8076);
@@ -2117,7 +2235,7 @@ HRESULT CDirect3DDevice_DrawIndexedPrimitive(const CDirect3DDevice *_this,
             }
         } else if (colorOffset >= 0) {
             const byte *colors = CDirect3DDevice_ConvertColorArray(
-                vertBase, stride, colorOffset, MinVertexIndex + NumVertices,
+                vertBase, stride, colorOffset, MinVertexIndex, NumVertices,
                 colorByteOrder);
 
             glEnableClientState(0x8076);
@@ -2138,17 +2256,8 @@ HRESULT CDirect3DDevice_DrawIndexedPrimitive(const CDirect3DDevice *_this,
         }
     }
 
-    glActiveTextureARB(GL_TEXTURE0_ARB);
-    glMatrixMode(0x1702);
-    if (g_textureStageState[0][D3DTSS_TEXTURETRANSFORMFLAGS] != D3DTTFF_DISABLE)
-        glLoadMatrixf(dev->texMatrix);
-    else
-        glLoadIdentity();
-    glMatrixMode(0x1700);
-
     {
         extern void glDrawElements(unsigned int, int, unsigned int, const void *);
-        indexCount = primCount * 3;
 
         glDrawElements(0x0004 , indexCount,
                        0x1403 ,
