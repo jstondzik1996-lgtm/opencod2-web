@@ -3,6 +3,12 @@
 Working name only; verify name and all component licences before any public launch.
 Status words: **done** = verified as described, **code** = implemented and unit/cloud tested but not on the real stack, **todo**.
 
+## IMPORTANT — direction reset 2026-10-26
+
+**KEEP the existing CoD2 engine / Emscripten browser port. DO NOT rewrite the engine.** The Jules PlayCanvas prototype is not the target product; development returns to original CoD2 1.3 browser gameplay, runtime profiling and targeted fixes on the original Windows machine. The 1 human + 15 NORMAL bots feature remains a later milestone on the EXISTING engine, not a replacement engine. **Read [the authoritative owner decision](PRODUCT_DIRECTION_KEEP_EXISTING_COD2_ENGINE.md) before coding.**
+
+**Immediate goal:** launch the genuine previously-running browser CoD2 client, get a real screenshot with map/assets and measured FPS, then fix the existing renderer, player models, combat, movement and stability in place.
+
 ## Default match (decision 2026-10-26)
 
 **1 real browser player + 15 server-controlled bots, difficulty `normal`** (16 participants total). This is a **target requirement, not currently implemented**. The first playable gate is 1+1 with genuine movement/damage/death/respawn, then 1+4, 1+8, and the full 1+15 with measured FPS and server tick health. Humans joining later displace bots without displacing humans.
