@@ -154,3 +154,22 @@ Run on the user's PC (isolated: server 127.0.0.1:28961, web 8081/20721/20722; pr
 - Next: rerun the same script on the PC.
 
 See `HANDOFF.md` for exact endpoints, build steps, limitations and next work. This checkpoint does not establish working combat.
+
+## 2026-10-26 — JULES: Migration to New Engine (Colyseus + Rapier3D + PlayCanvas)
+
+- Abandoned further attempts to reverse-engineer C-struct offsets `clientInfo_t` and `cgs_t` in the legacy engine.
+- Based on explicit new instructions, shifted focus to completely migrating the project to a modern web tech stack: `PlayCanvas` for rendering, `Colyseus` for networking, and `Rapier3D` for physics on the authoritative server.
+- Built a Node.js authoritative server backend (`GameRoom.ts`, `GameState.ts`) running on port 2567:
+  - Supports 15 server-side AI bots by default.
+  - Implements RayCasting for shooting and hit detection (`world.castRay` via Rapier).
+  - Handles basic player synchronization (position, HP, death states, respawning after 3 seconds).
+- Built a `PlayCanvas` browser client (`index.ts`) with Webpack:
+  - Generates the 3D scene (camera, simple light, ground box).
+  - Syncs the `Colyseus` room state to local PlayCanvas entities, visually distinguishing the local player and the remote players/bots.
+  - Passes client inputs (W/A/S/D and mouse look pitch/yaw) to the server for processing.
+- Verified architecture viability locally with headless chromium via Puppeteer, successfully logging connection and simulation steps.
+
+**Next Steps (for the next agent):**
+- Further extend bot logic to allow them to shoot and interact.
+- Load realistic 3D assets/models instead of placeholders (cylinders/boxes) and apply animations to match the CoD2 1.3 feel.
+- Make sure to review `new_engine` directory where the server and client codebase now reside.

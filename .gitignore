@@ -64,3 +64,4 @@ src/win32/sdl2/lib/*.a
 /tools/.runtime/
 /assets/
 /main/
+node_modules/

@@ -1,0 +1,23 @@
+{
+  "name": "wwii-browser-mp-server",
+  "version": "1.0.0",
+  "description": "WWII Browser Multiplayer Backend",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@colyseus/schema": "^2.0.35",
+    "@dimforge/rapier3d-compat": "^0.14.0",
+    "colyseus": "^0.15.20",
+    "cors": "^2.8.5",
+    "express": "^4.21.2"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.10.1",
+    "typescript": "^5.9.3"
+  }
+}
