@@ -109,7 +109,7 @@ set(WEB_LINK
   -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=256MB -sSTACK_SIZE=5242880
   -sFORCE_FILESYSTEM=1 -sASSERTIONS=1 -sEXIT_RUNTIME=0 -sERROR_ON_UNDEFINED_SYMBOLS=0
   -sWARN_ON_UNDEFINED_SYMBOLS=0 -sMALLOC=emmalloc -sSUPPORT_LONGJMP=emscripten
-  -sEXPORTED_RUNTIME_METHODS=callMain,FS,ccall,UTF8ToString
+  -sEXPORTED_RUNTIME_METHODS=callMain,FS,ccall,UTF8ToString,ENV
   --shell-file ${COD2_SRC_DIR}/web/shell_nzp.html
   -Wl,--allow-multiple-definition
   -Wl,--allow-undefined

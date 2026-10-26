@@ -2,6 +2,9 @@
 #include "imports.h"
 #include <stdlib.h>
 #include <string.h>
+#ifdef __EMSCRIPTEN__
+#include "web/webgl2_native.h"
+#endif
 typedef void (*fnptr_t)(void);
 extern fnptr_t vtbl_CDirect3DVertexBuffer[];
 extern fnptr_t vtbl_CStaticCacheInfo[];
@@ -48,9 +51,14 @@ ULONG CDirect3DVertexBuffer_Release(const CDirect3DVertexBuffer *_this)
 HRESULT CDirect3DVertexBuffer_Lock(const CDirect3DVertexBuffer *_this, UINT OffsetToLock, UINT SizeToLock, void **ppbData, DWORD Flags)
 {
     CDirect3DVertexBufferClean *vb = (CDirect3DVertexBufferClean *)_this;
-    (void)SizeToLock;
     (void)Flags;
     *ppbData = vb->data + OffsetToLock;
+#ifdef __EMSCRIPTEN__
+    /* The GL mirror of this buffer must re-upload whatever the caller writes. */
+    webgl2_buffer_written(vb->data, OffsetToLock, SizeToLock);
+#else
+    (void)SizeToLock;
+#endif
     return 0;
 }
 
@@ -76,6 +84,10 @@ void ZN21CDirect3DVertexBufferD1Ev(void *_this)
 {
     CDirect3DVertexBufferClean *vb = (CDirect3DVertexBufferClean *)_this;
     vb->vtable = vtbl_CDirect3DVertexBuffer;
+#ifdef __EMSCRIPTEN__
+    if (vb->data)
+        webgl2_buffer_released(vb->data);
+#endif
     free(vb->data);
     vb->data = NULL;
 }

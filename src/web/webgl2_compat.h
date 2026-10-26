@@ -45,6 +45,32 @@ void webgl2_glEnable(unsigned int cap);
 
 void webgl2_set_ff_light(int index, int enable, const float *ambient_rgb);
 
+/*
+ * Cached state setters (webgl2_compat.c). Every GL state writer in the
+ * renderer includes this header through imports/opengl.h, so routing these
+ * entry points through one cache keeps it identical to the real context
+ * while dropping the redundant WebGL calls the D3D layer issues per draw.
+ */
+void webgl2_glBindTexture(unsigned int target, unsigned int texture);
+void webgl2_glTexParameteri(unsigned int target, unsigned int pname, int param);
+void webgl2_glTexParameterf(unsigned int target, unsigned int pname, float param);
+void webgl2_glDeleteTextures(int n, const unsigned int *textures);
+void webgl2_glDepthFunc(unsigned int func);
+void webgl2_glDepthMask(unsigned char flag);
+void webgl2_glBlendFunc(unsigned int sfactor, unsigned int dfactor);
+void webgl2_glColorMask(unsigned char red, unsigned char green, unsigned char blue, unsigned char alpha);
+
+#ifndef WEBGL2_COMPAT_NO_STATE_MACROS
+#define glBindTexture webgl2_glBindTexture
+#define glTexParameteri webgl2_glTexParameteri
+#define glTexParameterf webgl2_glTexParameterf
+#define glDeleteTextures webgl2_glDeleteTextures
+#define glDepthFunc webgl2_glDepthFunc
+#define glDepthMask webgl2_glDepthMask
+#define glBlendFunc webgl2_glBlendFunc
+#define glColorMask webgl2_glColorMask
+#endif
+
 #endif
 
 #endif
