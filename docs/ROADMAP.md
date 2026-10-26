@@ -3,6 +3,12 @@
 Working name only; verify name and all component licences before any public launch.
 Status words: **done** = verified as described, **code** = implemented and unit/cloud tested but not on the real stack, **todo**.
 
+## Default match (decision 2026-10-26)
+
+**1 real browser player + 15 server-controlled bots, difficulty `normal`** (16 participants total). This is a **target requirement, not currently implemented**. The first playable gate is 1+1 with genuine movement/damage/death/respawn, then 1+4, 1+8, and the full 1+15 with measured FPS and server tick health. Humans joining later displace bots without displacing humans.
+
+See **[Bot match requirements](BOT_MATCH_REQUIREMENTS.md)** for the config contract, AI/controller architecture, existing QA maxPlayers=4 discrepancy, performance/security rules and PASS/FAIL acceptance tests.
+
 ## Tracks
 
 **A. CoD2 1.3 compatible port.** The existing client and reconstructed dedicated server, running on original game files each player supplies locally (folder picker / browser storage). Original IWDs, models, sounds, textures, keys and Steam files are never published or served by project hosts. Used for engine diagnostics and private testing.
