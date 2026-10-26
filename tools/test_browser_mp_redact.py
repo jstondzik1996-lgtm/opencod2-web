@@ -27,6 +27,12 @@ class BrowserHarnessLogTests(unittest.TestCase):
         self.assertNotIn(key[:16], redacted)
         self.assertIn('[redacted]', redacted)
 
+    def test_redacts_structured_secrets_and_bearer(self):
+        for name in ('ticket', 'session', 'playerKey', 'codkey', 'access_key'):
+            raw = '{"%s": "sensitiveValue"}' % name
+            self.assertNotIn('sensitiveValue', sanitize_test_log(raw))
+        self.assertNotIn('sensitiveValue', sanitize_test_log('Authorization: Bearer sensitiveValue'))
+
     def test_without_installed_key_does_not_modify_unrelated_log(self):
         sample = '{"kind":"state","health":100,"origin":[1,2,3]}'
         self.assertEqual(sanitize_test_log(sample), sample)

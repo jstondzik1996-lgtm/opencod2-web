@@ -12,8 +12,13 @@ import re
 _TOKEN_QUERY = re.compile(r'([?&](?:ticket|session|access|token)=)[^&" ]+', re.I)
 
 
+_TOKEN_JSON = re.compile(r'("(?:ticket|session|token|playerKey|codkey|access_key)"\s*:\s*")[^"]*', re.I)
+_BEARER = re.compile(r"(Authorization:\s*Bearer\s+)\S+", re.I)
+
 def sanitize_test_log(value: str, installed_key: str | None = None) -> str:
     value = _TOKEN_QUERY.sub(lambda match: match.group(1) + '[redacted]', value)
+    value = _TOKEN_JSON.sub(lambda match: match.group(1) + '[redacted]', value)
+    value = _BEARER.sub(lambda match: match.group(1) + '[redacted]', value)
     if installed_key:
         value = value.replace(installed_key, '[redacted]')
         if len(installed_key) >= 16:
