@@ -17,6 +17,15 @@ Run the original Call of Duty 2 1.3 multiplayer client inside a browser, without
 - Project server directory, `/play/api/servers`, Quick Play matchmaking with slot reservations, relay allowlist from the directory and the launcher lobby are implemented and tested in the cloud against fake UDP servers and a stubbed engine (see "Own servers and lobby"). Not yet tested with the real dedicated server or real WASM client.
 - Not verified: all maps, stock-server interoperability, Internet play, performance on other hardware, campaign, full round lifecycle. Headless rendering ran around 10–12 FPS in a diagnostic build; actual GPU renderer was not measured.
 
+## Renderer / colours / models (Claude, 2026-10-26, PR from `claude/renderer-models-anim-fixes`)
+
+Code fixes, not yet observed in a live browser with original assets (see WORK_LOG for details):
+- Native WebGL2 draw path for `DrawIndexedPrimitive` (mirrored D3D buffers, Lock()-range uploads, cached GL state/uniforms/texture binds). A/B switch: append `?glLegacy=1` to the game URL. Stats: `?glStats=1` → `[gl-stats]` lines every 300 frames; `Module.ccall('cod2_gl_stats_json','string')`.
+- Purple/blue colours: IWI RGB24 byte order, static-model vertex colour decode (BGRA), `$identitynormalmap`/`$specularity` no longer used as diffuse fallback.
+- Invisible players: `[cg-player] missing DObj ...` now prints clientinfo state (infoValid, model, attachments, dobjDirty).
+- Asset-free tests: `tests/webgl2_compat/run.sh`, `tests/texture_colors/run.sh` (both in CI).
+Next check on Windows: FPS with/without `?glLegacy=1` at the same spot, screenshot of halftrack/crates/foliage, `[gl-stats]` and `[cg-player]` console lines.
+
 ## P0 status (Claude, 2026-10-25, latest)
 
 Two independent blockers were on the bullet path; both are fixed in code, neither is proven by a real two-client run yet:

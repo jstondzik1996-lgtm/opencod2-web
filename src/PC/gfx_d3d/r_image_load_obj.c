@@ -126,10 +126,30 @@ static void __attribute_regparm__(3) Image_LoadBitmap(GfxImage *image, const Gfx
                     byte *dst = expandedData;
                     const byte *src = srcPtr;
                     for (p = 0; p < mipPixels; p++) {
+#if !defined(__EMSCRIPTEN__) && defined(__BIG_ENDIAN__)
+                        /*
+                         * Mac PPC: X8R8G8B8 texels as big-endian DWORDs
+                         * (bytes X,R,G,B) for GL_BGRA + 8_8_8_8_REV.
+                         */
                         dst[0] = 0xFF;
                         dst[1] = src[2];
                         dst[2] = src[1];
                         dst[3] = src[0];
+#else
+                        /*
+                         * IWI RGB24 texels are stored B,G,R (D3D R8G8B8
+                         * memory order). D3DFMT_X8R8G8B8 on a little-endian
+                         * heap is B,G,R,X, which CDirect3DSurface converts
+                         * BGRA->RGBA for WebGL. The big-endian layout above
+                         * put 0xFF into the blue channel on WASM (purple /
+                         * blue-tinted uncompressed textures), the same bug
+                         * already fixed for wavelet images below.
+                         */
+                        dst[0] = src[0];
+                        dst[1] = src[1];
+                        dst[2] = src[2];
+                        dst[3] = 0xFF;
+#endif
                         dst += 4;
                         src += 3;
                     }

@@ -298,9 +298,23 @@ void CG_Player(centity_t *cent)
          */
         static unsigned int missingDObjReports;
         if (missingDObjReports < 16) {
+            const clientInfo_t *mci = ((unsigned int)es->clientNum < 64)
+                                          ? &cg->bgs.clientinfo[es->clientNum]
+                                          : NULL;
             ++missingDObjReports;
-            Com_Printf("[cg-player] missing DObj entity=%d client=%d local=%d (remote player will be invisible)\n",
-                       es->number, es->clientNum, cent->localClientNum);
+            /*
+             * BG_UpdatePlayerDObj only creates the DObj when the snapshot's
+             * client list made the clientinfo valid and named a body model.
+             * Print exactly those inputs so a live log separates "server
+             * never sent this client" (infoValid=0), "no model configstring"
+             * (model='') and a DObj that was created then freed.
+             */
+            Com_Printf("[cg-player] missing DObj entity=%d client=%d local=%d infoValid=%d nextValid=%d "
+                       "model='%s' attach0='%s' dobjDirty=%d iDObjWeapon=%d eFlags=0x%x (remote player will be invisible)\n",
+                       es->number, es->clientNum, cent->localClientNum,
+                       mci ? mci->infoValid : -1, mci ? mci->nextValid : -1,
+                       mci ? mci->model : "?", mci ? mci->attachModelNames[0] : "?",
+                       mci ? mci->dobjDirty : -1, mci ? mci->iDObjWeapon : -1, es->eFlags);
         }
         return;
     }
