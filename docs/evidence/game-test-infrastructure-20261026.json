@@ -1,0 +1,138 @@
+{
+  "opis": "Częściowa kontrola lokalnego wcześniejszego buildu, nie pełny test rozgrywki.",
+  "baza_PR": "7a6b5f72c6d77c7da5aa10ae6ae04673fd718cc4",
+  "testowany_starszy_build": "f0dc2fea5c",
+  "infrastruktura": {
+    "wynik": "PASS",
+    "liczba_testow": 33,
+    "zakres": "Regresje Python i próbnika JS na danych syntetycznych; bez dowodu działania gry."
+  },
+  "lokalny_przebieg": {
+    "status": "FAIL",
+    "metadata": {
+      "source_revision": "f0dc2fea5c",
+      "engine": "Istniejący CoD2 C/Emscripten",
+      "min_fps": 20,
+      "max_p95_ms": 150,
+      "timeout_seconds": 600,
+      "mode": "gra",
+      "assets": {
+        "archives_or_files": 5,
+        "bytes": 2633150094,
+        "models": 1533,
+        "materials": 4369,
+        "crc_checked": false
+      },
+      "url": "http://127.0.0.1:56675/cod2.html",
+      "server": "127.0.0.1:59837"
+    },
+    "checks": {
+      "preflight": {
+        "status": "PASS",
+        "name": "Pliki klienta, serwera i lokalne zasoby",
+        "detail": "Pliki i manifest poprawne; modele i materiały są w indeksach IWD."
+      },
+      "services": {
+        "status": "FAIL",
+        "name": "Start serwera UDP, HTTP, katalogu i przekaźnika",
+        "detail": "TimeoutError: Limit startu usług: timed out"
+      },
+      "browser_run": {
+        "status": "NIE_WYKONANO",
+        "name": "Pełny przebieg dwóch klientów WASM",
+        "detail": ""
+      },
+      "two_distinct_clients": {
+        "status": "NIE_WYKONANO",
+        "name": "Dwa różne numery klientów",
+        "detail": ""
+      },
+      "both_spawned": {
+        "status": "NIE_WYKONANO",
+        "name": "Obaj gracze pojawili się z bronią i zdrowiem",
+        "detail": ""
+      },
+      "both_move": {
+        "status": "NIE_WYKONANO",
+        "name": "Ruch obu graczy i postęp migawek",
+        "detail": ""
+      },
+      "both_fire": {
+        "status": "NIE_WYKONANO",
+        "name": "Strzały obu graczy zużywają amunicję",
+        "detail": ""
+      },
+      "damage_to_other_player": {
+        "status": "NIE_WYKONANO",
+        "name": "Trafienia obniżają zdrowie przeciwnika",
+        "detail": ""
+      },
+      "target_died": {
+        "status": "NIE_WYKONANO",
+        "name": "Śmierć przeciwnika",
+        "detail": ""
+      },
+      "target_respawned": {
+        "status": "NIE_WYKONANO",
+        "name": "Odrodzenie po śmierci",
+        "detail": ""
+      },
+      "server_alive_after_disconnect": {
+        "status": "NIE_WYKONANO",
+        "name": "Serwer działa po rozłączeniu gracza",
+        "detail": ""
+      },
+      "disconnected": {
+        "status": "NIE_WYKONANO",
+        "name": "Potwierdzone rozłączenie klienta",
+        "detail": ""
+      },
+      "reconnected": {
+        "status": "NIE_WYKONANO",
+        "name": "Ponowne połączenie klienta",
+        "detail": ""
+      },
+      "server_alive_after_reconnect": {
+        "status": "NIE_WYKONANO",
+        "name": "Serwer działa po ponownym połączeniu",
+        "detail": ""
+      },
+      "assets": {
+        "status": "NIE_WYKONANO",
+        "name": "Brak zgłoszonych brakujących modeli i materiałów",
+        "detail": ""
+      },
+      "runtime": {
+        "status": "NIE_WYKONANO",
+        "name": "Brak awarii JavaScript, WASM i WebGL",
+        "detail": ""
+      },
+      "performance": {
+        "status": "NIE_WYKONANO",
+        "name": "Płynność klatek zawierających rysowanie WebGL",
+        "detail": ""
+      },
+      "synchronization": {
+        "status": "NIE_WYKONANO",
+        "name": "Postęp migawek i zgodność tożsamości graczy",
+        "detail": ""
+      }
+    },
+    "notes": [
+      "PASS dotyczy wyłącznie tej mapy, scenariusza i podanych progów.",
+      "Brak błędów modeli w logach nie potwierdza poprawnych kolorów ani widoczności każdego modelu.",
+      "Pomiar klatek WebGL w headless Chromium nie zastępuje testu GPU użytkownika.",
+      "Preflight sprawdza indeksy i rozmiary archiwów; nie sprawdza CRC całej zawartości.",
+      "Pełny test gry nie został potwierdzony. Zachowano dostępne logi.",
+      "Brak zrzutów ekranu: test nie dotarł do działającej przeglądarki lub klient się zawiesił."
+    ]
+  },
+  "obserwacje": [
+    "Nagłówki WASM/MZ, manifest i indeksy ZIP przeszły kontrolę.",
+    "W logu serwera po bezpośrednim +devmap: Scr_StartupGameType: done.",
+    "Usługi nie przeszły gotowości w ograniczonym środowisku wykonawczym.",
+    "Przeglądarki, trafień, śmierci, respawnu i FPS NIE WYKONANO.",
+    "Nie ma zrzutów gry. Nie wykonywano nowej kompilacji ani pełnego CRC archiwów.",
+    "Wcześniejsze localhost connect_ex zwróciło Windows 10013; nie rozstrzyga to przyczyny wszystkich timeoutów."
+  ]
+}

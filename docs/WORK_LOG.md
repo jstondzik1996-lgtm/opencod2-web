@@ -1,5 +1,19 @@
 # Work log
 
+## 2026-10-26 — Codex: automatyczne testowanie prawdziwej gry (osobna gałąź)
+
+- Zakres: wyłącznie infrastruktura testów istniejącego portu C/Emscripten. Gałąź `codex/automated-game-tests`, PR do `codex/browser-mp-checkpoint`, zgodnie z bieżącym poleceniem właściciela. Nie zmieniano plików renderera ani obrażeń.
+- Sprawdzono aktualne `tools/RUN_UPDATED_LOCAL_TEST.bat`, `tools/browser_multiplayer_check.py`, HANDOFF i WORK_LOG z bazy `7a6b5f72c6d77c7da5aa10ae6ae04673fd718cc4`. Lokalny wcześniejszy checkout ma inną historię; zachowano go bez zmian. Kod i dokumenty do PR pobrano z dokładnej rewizji GitHub.
+- Wcześniejszy BAT jedynie otwierał stronę. Teraz po osobnej kompilacji uruchamia `tools/run_browser_game_test.py`: własny serwer UDP, katalog, relay, HTTP i dwa klienty, nowe wolne porty, nowe profile bez CD-Key, sesje projektu, watchdog i sprzątanie wyłącznie utworzonych procesów. BAT można uruchomić z `tools/` albo wcześniejszego `work/`; obsługuje wybór gałęzi i tryb nieinteraktywny.
+- Raport PL `raport.md/json`: PASS/FAIL/NIE_WYKONANO; logi usług, odpowiedzi UDP, kody wyjścia, screenshoty etapów i przy wyjątku. Brak uruchomienia etapu nie daje PASS. Błędy JS/WASM/WebGL, logowane braki modeli/materiałów/DObj i błędy sieci trafiają do osobnych kontroli.
+- Pomiar płynności: wyłącznie takty rAF z rysowaniem WebGL, średnia, p95 i maksymalna przerwa; nie jest to pomiar czasu GPU ani dowód wizualnej poprawności całej mapy. Synchronizacja: postęp i cofanie migawek, zastoje, skoki, odchylenie zegara i zgodność client/psClient. Zachowano prawdziwy scenariusz strzałów, śmierci, respawnu i reconnect; dodano potwierdzenie faktycznego disconnect.
+- Regresje lokalne: **33 testy PASS** dla infrastruktury i anonimizacji; obejmują także wykonanie skryptu próbnika w Node.js na pozorowanym kontekście (nie prawdziwa gra). Nowy workflow powtarza je na Windows/Linux i przechowuje raport kontrolowanego błędu brakujących plików.
+- Dostępne lokalne pliki starszego buildu `f0dc2fea5c` przeszły kontrolę nagłówków WASM/MZ, manifestu i indeksów ZIP: 5 plików, 2 633 150 094 bajtów, 1533 wpisy modeli i 4369 materiałów. Nie wykonywano pełnego CRC ani nowej kompilacji silnika w tej sesji.
+- Pierwszy start ujawnił rzeczywistą wadę fixture: starszy serwer nie odnalazł luźnego `qa-test.cfg` w osobnym home. Nadzorca przekazuje teraz ustawienia i `+devmap mp_toujane` jako argumenty; log kolejnego startu doszedł do `Scr_StartupGameType: done`. Dodano regresję tego sposobu uruchomienia.
+- **Pełny test gry NIEZALICZONY / NIEPOTWIERDZONY**: kontrola gotowości usług kończy się FAIL w ograniczonym środowisku wykonawczym; dwóch klientów i pomiaru FPS nie wykonano. Wcześniej próba połączenia z istniejącym localhost zwróciła Windows 10013, a bezpośredni GitHub/DNS był niedostępny. To nie stanowi dowodu awarii silnika; przyczyny każdego zatrzymania zapisuje raport i logi. Nie tworzono zastępczych screenshotów ani nie oznaczano walki jako PASS.
+- Instrukcja i ograniczenia: `docs/AUTOMATYCZNE_TESTY_GRY.md`. Następny krok: lokalny agent uruchamia ten sam runner poza blokującym środowiskiem, na świeżo zbudowanej rewizji i rzeczywistych zasobach; analizuje raport zamiast uznawać samą kompilację za sukces.
+
+
 ## 2026-10-25 — ChatGPT: recorded gameplay performance review + first WASM/WebGL hotfixes
 
 - Analysed the user's 88-second Chromium/Brave screen recording (1920x1002, recorded at 30 FPS). Real Toujane gameplay appears around 50–88s. The game's own counter visibly varies from about 20 FPS to 41 FPS; a frame-difference estimate from the recording shows approximately 8–11 visibly distinct frames/sec during moving gameplay (recording-rate/content artefacts possible; **not** a reliable GPU benchmark). There are visibly purple-tinted surfaces on the halftrack/boxes/foliage and stutter; user also reports invisible second player, ladder/weapon bugs.

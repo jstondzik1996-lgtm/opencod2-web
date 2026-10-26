@@ -1,0 +1,58 @@
+name: Testy infrastruktury prawdziwej gry
+on:
+  pull_request:
+    paths:
+      - "tools/browser_game_*.py"
+      - "tools/browser_multiplayer_check.py"
+      - "tools/browser_mp_redact.py"
+      - "tools/run_browser_game_test.py"
+      - "tools/test_browser*.py"
+      - "tools/RUN_UPDATED_LOCAL_TEST.bat"
+      - ".github/workflows/game-test-infrastructure.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  infrastructure:
+    name: Infrastruktura bez oryginalnych zasobów
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 5
+    env:
+      PYTHONIOENCODING: utf-8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Sprawdzenie składni harnessu
+        run: python -m py_compile tools/browser_multiplayer_check.py tools/run_browser_game_test.py tools/browser_game_report.py tools/browser_game_diagnostics.py
+      - name: Regresje watchdog, raportów, migawek, płynności i anonimizacji
+        shell: bash
+        run: |
+          set +e
+          python -m unittest discover -s tools -p 'test_browser*.py' -v > infrastructure.log 2>&1
+          code=$?
+          cat infrastructure.log
+          exit "$code"
+      - name: CLI zapisuje FAIL przy brakujących plikach gry
+        shell: bash
+        run: |
+          set +e
+          python tools/run_browser_game_test.py --web-root __missing --server-exe __missing --game-root __missing --output ci-report
+          code=$?
+          test "$code" -eq 1
+      - name: Zachowanie raportów infrastruktury
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: infrastruktura-${{ matrix.os }}
+          path: |
+            infrastructure.log
+            ci-report/
+          if-no-files-found: error

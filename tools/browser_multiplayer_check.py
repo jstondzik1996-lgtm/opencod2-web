@@ -19,8 +19,8 @@ from pathlib import Path
 import time
 import math
 import tempfile
-from playwright.sync_api import sync_playwright
 from browser_mp_redact import sanitize_test_log
+from browser_game_diagnostics import Diagnostics, FRAME_PROBE
 
 from contextlib import contextmanager
 
@@ -37,244 +37,300 @@ no_key = os.environ.get('COD2_TEST_NO_KEY', '').strip().lower() in ('1', 'true',
 session_mode = os.environ.get('COD2_TEST_SESSION', '').strip().lower() in ('1', 'true', 'yes')
 if session_mode and not no_key:
     raise RuntimeError('COD2_TEST_SESSION requires COD2_TEST_NO_KEY=1')
-key = None
-if not no_key:
-    # Never read the installed CD-Key when explicitly testing project-owned
-    # servers with anonymous LAN-mode connections.
-    import winreg
-    with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r'SOFTWARE\WOW6432Node\Activision\Call of Duty 2') as registry:
-        key = winreg.QueryValueEx(registry, 'codkey')[0].replace('-', '').strip()
-    if len(key) != 20:
-        raise RuntimeError('Unexpected local game key length')
-log = (root / 'multiplayer-test.log').open('w', encoding='utf-8', buffering=1)
-def emit(kind, value):
-    text = json.dumps(dict(time=time.time(), kind=kind, value=value), ensure_ascii=False)
-    log.write(sanitize_test_log(text, key) + '\n')
-def state(page):
-    return page.evaluate('JSON.parse(Module.ccall("Web_TestClientState", "string", [], []))')
-def command(page, text):
-    page.evaluate('text => Module.ccall("Cbuf_AddText", null, ["string"], [text + "\\n"])', text)
+installed_key_for_redaction = None
 
-with tempfile.TemporaryDirectory(prefix='cod2-no-key-profile-', dir=root) if no_key else _existing_profile(root) as profile_dir, sync_playwright() as p:
-    # COD2_TEST_BROWSER: path to an installed Chrome/Chromium when Playwright's
-    # own browser build is not downloaded (e.g. offline test machines).
-    browser_exe = os.environ.get('COD2_TEST_BROWSER') or None
-    context = p.chromium.launch_persistent_context(str(profile_dir), headless=True,
-        executable_path=browser_exe,
-        args=['--enable-unsafe-swiftshader', '--autoplay-policy=no-user-gesture-required', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows'],
-        viewport=dict(width=1280, height=800))
-    pages = []
-    movement_results, fire_results = [], []
-    for index in range(2):
-        page = context.new_page()
-        page.on('console', lambda msg, i=index: emit('console' + str(i), dict(type=msg.type, text=msg.text)))
-        page.on('pageerror', lambda err, i=index: emit('error' + str(i), err.stack))
-        page.on('websocket', lambda ws, i=index: emit('ws' + str(i), ws.url))
-        page.goto(url, wait_until='domcontentloaded')
-        page.wait_for_function('typeof Cod2Fs !== "undefined" && typeof Module.callMain === "function"')
-        if index == 0:
-            page.evaluate('async () => { await Cod2Fs.ingestRemote({manifestUrl:"assets.json",baseUrl:"/"}); }')
-            page.reload(wait_until='domcontentloaded')
-        page.wait_for_function('!document.getElementById("beginBtn").disabled', timeout=60000)
-        if session_mode:
-            # A private-session test must be authorized by OUR master and relay.
-            # Use a different randomly generated guest identity per browser page.
-            # Do not log the guest key, session token or server-bound join ticket.
-            admission = page.evaluate("""async data => {
-              const keyBytes = crypto.getRandomValues(new Uint8Array(24));
-              const playerKey = btoa(String.fromCharCode(...keyBytes))
-                .replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');
-              async function post(path, payload) {
-                const response = await fetch('/play/api/' + path, {
-                  method: 'POST', headers: {'Content-Type':'application/json'},
-                  body: JSON.stringify(payload)
-                });
-                if (!response.ok) throw new Error(path + ': HTTP ' + response.status);
-                return response.json();
-              }
-              const session = await post('session', {nick: data.name, playerKey});
-              const serversResponse = await fetch('/play/api/servers');
-              if (!serversResponse.ok) throw new Error('servers: HTTP ' + serversResponse.status);
-              const servers = (await serversResponse.json()).servers || [];
-              const target = servers.find(s => s.connect === data.server);
-              if (!target) throw new Error('configured server not in project directory: ' + data.server);
-              const joined = await post('join', {session: session.token, serverId: target.id});
-              if (joined.connect !== data.server || !joined.ticket)
-                throw new Error('join did not return the expected server/ticket');
-              window.COD2_RELAY_SESSION = session.token;
-              window.COD2_RELAY_TICKETS = {[data.server]: joined.ticket};
-              Module.COD2_RELAY_SESSION = session.token;
-              Module.COD2_RELAY_TICKETS = window.COD2_RELAY_TICKETS;
-              return {server: data.server, nick: session.nick, ticketPresent: true};
-            }""", dict(name='Browser' + str(index + 1), server=server))
-            emit('admission' + str(index), admission)
-        page.evaluate('data => {const orig = Module.callMain; Module.callMain = function(args) {FS.mkdirTree("/cod2home/.cod2"); if (data.key) FS.writeFile("/cod2home/.cod2/preferences", "codkey="+data.key+"\\n"); return orig(args.concat(["+set","name",data.name,"+set","net_lanauthorize","0","+connect",data.server]));};}', dict(key=key, name='Browser' + str(index + 1), server=server))
-        page.locator('#beginBtn').click()
-        for attempt in range(50):
-            page.wait_for_timeout(1000)
-            current = state(page)
-            emit('state' + str(index), current)
-            if current.get('state') == 8:
-                break
-        page.locator('#consoleToggleBtn').click()
-        page.screenshot(path=str(root / ('player' + str(index + 1) + '-connected.png')))
-        print('Client', index + 1, current, flush=True)
-        pages.append(page)
-    for index, page in enumerate(pages):
-        page.bring_to_front()
-        page.keyboard.press('Enter')
-        page.wait_for_timeout(1500)
-        page.screenshot(path=str(root / ('player' + str(index + 1) + '-enter.png')))
-        emit('after_enter' + str(index), state(page))
-        page.keyboard.press('2' if index == 0 else '3')
-        page.wait_for_timeout(1000)
-        page.screenshot(path=str(root / ('player' + str(index + 1) + '-weapon-menu.png')))
-        page.keyboard.press('1')
-        page.wait_for_timeout(3000)
-        page.screenshot(path=str(root / ('player' + str(index + 1) + '-spawned.png')))
-        emit('spawned' + str(index), state(page))
-    for index, page in enumerate(pages):
-        page.bring_to_front()
-        before = state(page)
-        page.keyboard.down('w')
-        page.wait_for_timeout(1500)
-        page.keyboard.up('w')
-        page.wait_for_timeout(500)
-        movement_result = dict(before=before, after=state(page))
-        movement_results.append(movement_result)
-        emit('movement' + str(index), movement_result)
-        page.mouse.move(640, 400)
-        before = state(page)
-        page.mouse.down()
-        page.wait_for_timeout(700)
-        page.mouse.up()
-        page.wait_for_timeout(1000)
-        fire_result = dict(before=before, after=state(page))
-        fire_results.append(fire_result)
-        emit('fire' + str(index), fire_result)
-    # Put both clients on a short segment actually traversed by client one.
-    # The local server runs devmap solely to permit the setviewpos fixture.
-    a = movement_results[0]['before']['origin']
-    b = movement_results[0]['after']['origin']
-    distance = math.sqrt(sum((b[i]-a[i])**2 for i in range(3)))
-    if distance > 80:
-        b = [a[i] + (b[i]-a[i])*80/distance for i in range(3)]
-    for page, position in zip(pages, [a, b]):
-        command(page, 'cmd setviewpos %.3f %.3f %.3f 0' % (position[0], position[1], position[2] + 60))
-    pages[0].wait_for_timeout(2000)
-    target = state(pages[1])
-    shooter = pages[0]
-    shooter.bring_to_front()
-    shooter.evaluate('p => Module.ccall("Web_TestAimAt", null, ["number","number","number"], [p[0],p[1],p[2]+35])', target['origin'])
-    shooter.wait_for_timeout(500)
-    duel_before = [state(page) for page in pages]
-    command(shooter, '+attack')
-    shooter.wait_for_timeout(1500)
-    command(shooter, '-attack')
-    shooter.wait_for_timeout(800)
-    duel_after = [state(page) for page in pages]
-    emit('duel', dict(before=duel_before, after=duel_after))
+def run():
+    global installed_key_for_redaction
+    key = None
+    if not no_key:
+        # Never read the installed CD-Key when explicitly testing project-owned
+        # servers with anonymous LAN-mode connections.
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r'SOFTWARE\WOW6432Node\Activision\Call of Duty 2') as registry:
+            key = winreg.QueryValueEx(registry, 'codkey')[0].replace('-', '').strip()
+        installed_key_for_redaction = key
+        if len(key) != 20:
+            raise RuntimeError('Unexpected local game key length')
+    diagnostics = Diagnostics()
+    log = (root / 'multiplayer-test.log').open('w', encoding='utf-8', buffering=1)
+    def emit(kind, value):
+        diagnostics.event(kind, value)
+        text = json.dumps(dict(time=time.time(), kind=kind, value=value), ensure_ascii=False)
+        log.write(sanitize_test_log(text, key) + '\n')
+    def state(page):
+        return page.evaluate('JSON.parse(Module.ccall("Web_TestClientState", "string", [], []))')
+    def command(page, text):
+        page.evaluate('text => Module.ccall("Cbuf_AddText", null, ["string"], [text + "\\n"])', text)
+    
+    from playwright.sync_api import sync_playwright
+    
+    with tempfile.TemporaryDirectory(prefix='cod2-no-key-profile-', dir=root) if no_key else _existing_profile(root) as profile_dir, sync_playwright() as p:
+        # COD2_TEST_BROWSER: path to an installed Chrome/Chromium when Playwright's
+        # own browser build is not downloaded (e.g. offline test machines).
+        browser_exe = os.environ.get('COD2_TEST_BROWSER') or None
+        context = p.chromium.launch_persistent_context(str(profile_dir), headless=True,
+            executable_path=browser_exe,
+            args=['--enable-unsafe-swiftshader', '--autoplay-policy=no-user-gesture-required', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows'],
+            viewport=dict(width=1280, height=800))
+        context.set_default_timeout(20000)
+        context.add_init_script(FRAME_PROBE)
+        pages = []
+        try:
+            movement_results, fire_results = [], []
+            for index in range(2):
+                page = context.new_page()
+                pages.append(page)
+                diagnostics.attach(page, index, emit)
+                page.on('console', lambda msg, i=index: emit('console' + str(i), dict(type=msg.type, text=msg.text)))
+                page.on('pageerror', lambda err, i=index: emit('error' + str(i), err.stack))
+                page.on('websocket', lambda ws, i=index: emit('ws' + str(i), ws.url))
+                page.goto(url, wait_until='domcontentloaded')
+                page.wait_for_function('typeof Cod2Fs !== "undefined" && typeof Module.callMain === "function"')
+                if index == 0:
+                    page.evaluate('async () => { await Cod2Fs.ingestRemote({manifestUrl:"assets.json",baseUrl:"/"}); }')
+                    page.reload(wait_until='domcontentloaded')
+                page.wait_for_function('!document.getElementById("beginBtn").disabled', timeout=60000)
+                if session_mode:
+                    # A private-session test must be authorized by OUR master and relay.
+                    # Use a different randomly generated guest identity per browser page.
+                    # Do not log the guest key, session token or server-bound join ticket.
+                    admission = page.evaluate("""async data => {
+                      const keyBytes = crypto.getRandomValues(new Uint8Array(24));
+                      const playerKey = btoa(String.fromCharCode(...keyBytes))
+                        .replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');
+                      async function post(path, payload) {
+                        const response = await fetch('/play/api/' + path, {
+                          method: 'POST', headers: {'Content-Type':'application/json'},
+                          body: JSON.stringify(payload)
+                        });
+                        if (!response.ok) throw new Error(path + ': HTTP ' + response.status);
+                        return response.json();
+                      }
+                      const session = await post('session', {nick: data.name, playerKey});
+                      const serversResponse = await fetch('/play/api/servers');
+                      if (!serversResponse.ok) throw new Error('servers: HTTP ' + serversResponse.status);
+                      const servers = (await serversResponse.json()).servers || [];
+                      const target = servers.find(s => s.connect === data.server);
+                      if (!target) throw new Error('configured server not in project directory: ' + data.server);
+                      const joined = await post('join', {session: session.token, serverId: target.id});
+                      if (joined.connect !== data.server || !joined.ticket)
+                        throw new Error('join did not return the expected server/ticket');
+                      window.COD2_RELAY_SESSION = session.token;
+                      window.COD2_RELAY_TICKETS = {[data.server]: joined.ticket};
+                      Module.COD2_RELAY_SESSION = session.token;
+                      Module.COD2_RELAY_TICKETS = window.COD2_RELAY_TICKETS;
+                      return {server: data.server, nick: session.nick, ticketPresent: true};
+                    }""", dict(name='Browser' + str(index + 1), server=server))
+                    emit('admission' + str(index), admission)
+                page.evaluate('data => {const orig = Module.callMain; Module.callMain = function(args) {FS.mkdirTree("/cod2home/.cod2"); if (data.key) FS.writeFile("/cod2home/.cod2/preferences", "codkey="+data.key+"\\n"); return orig(args.concat(["+set","name",data.name,"+set","net_lanauthorize","0","+connect",data.server]));};}', dict(key=key, name='Browser' + str(index + 1), server=server))
+                page.locator('#beginBtn').click()
+                for attempt in range(50):
+                    page.wait_for_timeout(1000)
+                    current = state(page)
+                    emit('state' + str(index), current)
+                    if current.get('state') == 8:
+                        break
+                page.locator('#consoleToggleBtn').click()
+                page.screenshot(path=str(root / ('player' + str(index + 1) + '-connected.png')))
+                print('Client', index + 1, current, flush=True)
+            for index, page in enumerate(pages):
+                page.bring_to_front()
+                page.keyboard.press('Enter')
+                page.wait_for_timeout(1500)
+                page.screenshot(path=str(root / ('player' + str(index + 1) + '-enter.png')))
+                emit('after_enter' + str(index), state(page))
+                page.keyboard.press('2' if index == 0 else '3')
+                page.wait_for_timeout(1000)
+                page.screenshot(path=str(root / ('player' + str(index + 1) + '-weapon-menu.png')))
+                page.keyboard.press('1')
+                page.wait_for_timeout(3000)
+                page.screenshot(path=str(root / ('player' + str(index + 1) + '-spawned.png')))
+                emit('spawned' + str(index), state(page))
+            observation = diagnostics.observe(pages, state, emit,
+                seconds=float(os.environ.get('COD2_TEST_OBSERVE_SECONDS', '12')),
+                min_fps=float(os.environ.get('COD2_TEST_MIN_FPS', '20')),
+                max_p95_ms=float(os.environ.get('COD2_TEST_MAX_P95_MS', '150')),
+                max_stall_ms=float(os.environ.get('COD2_TEST_MAX_STALL_MS', '3000')),
+                max_gap_ms=float(os.environ.get('COD2_TEST_MAX_GAP_MS', '1500')))
+            pages[0].screenshot(path=str(root / 'performance.png'))
+            for index, page in enumerate(pages):
+                page.bring_to_front()
+                before = state(page)
+                page.keyboard.down('w')
+                page.wait_for_timeout(1500)
+                page.keyboard.up('w')
+                page.wait_for_timeout(500)
+                movement_result = dict(before=before, after=state(page))
+                movement_results.append(movement_result)
+                emit('movement' + str(index), movement_result)
+                page.mouse.move(640, 400)
+                before = state(page)
+                page.mouse.down()
+                page.wait_for_timeout(700)
+                page.mouse.up()
+                page.wait_for_timeout(1000)
+                fire_result = dict(before=before, after=state(page))
+                fire_results.append(fire_result)
+                emit('fire' + str(index), fire_result)
+            # Put both clients on a short segment actually traversed by client one.
+            # The local server runs devmap solely to permit the setviewpos fixture.
+            a = movement_results[0]['before']['origin']
+            b = movement_results[0]['after']['origin']
+            distance = math.sqrt(sum((b[i]-a[i])**2 for i in range(3)))
+            if distance > 80:
+                b = [a[i] + (b[i]-a[i])*80/distance for i in range(3)]
+            for page, position in zip(pages, [a, b]):
+                command(page, 'cmd setviewpos %.3f %.3f %.3f 0' % (position[0], position[1], position[2] + 60))
+            pages[0].wait_for_timeout(2000)
+            target = state(pages[1])
+            shooter = pages[0]
+            shooter.bring_to_front()
+            shooter.evaluate('p => Module.ccall("Web_TestAimAt", null, ["number","number","number"], [p[0],p[1],p[2]+35])', target['origin'])
+            shooter.wait_for_timeout(500)
+            duel_before = [state(page) for page in pages]
+            shooter.wait_for_timeout(1000)
+            settled = [state(page) for page in pages]
+            separation = math.dist(settled[0]['origin'], settled[1]['origin'])
+            fixture_valid = (16 <= separation <= 160 and
+                all(before['health'] > 0 and after['health'] == before['health'] and
+                    math.dist(before['origin'], after['origin']) < 8 and
+                    after['snapshotTime'] > before['snapshotTime']
+                    for before, after in zip(duel_before, settled)))
+            emit('duel_fixture', dict(valid=fixture_valid, separation=separation,
+                                     before=duel_before, settled=settled))
+            if not fixture_valid:
+                raise RuntimeError('Nieprawidłowa pozycja testowa lub niestabilne zdrowie przed strzałem.')
+            duel_before = settled
+            command(shooter, '+attack')
+            shooter.wait_for_timeout(1500)
+            command(shooter, '-attack')
+            shooter.wait_for_timeout(800)
+            duel_after = [state(page) for page in pages]
+            emit('duel', dict(before=duel_before, after=duel_after))
+        
+            # ---- Lifecycle: kill, respawn, disconnect, reconnect ------------------
+            # Only normal client commands are sent. Health is read from the client's
+            # snapshot (server authoritative); nothing here sets health directly.
+            victim = pages[1]
+            lifecycle = dict(kill=[], respawn=[], alive_during_disconnect=[], reconnect=[])
+            died = False
+            death_state = None
+            deadline = time.monotonic() + 25
+            while time.monotonic() < deadline and not died:
+                target = state(victim)
+                if target.get('health', 100) <= 0:
+                    died, death_state = True, target
+                    break
+                shooter.evaluate('p => Module.ccall("Web_TestAimAt", null, ["number","number","number"], [p[0],p[1],p[2]+35])', target['origin'])
+                if state(shooter).get('clip', 1) == 0:
+                    command(shooter, '+reload')
+                    shooter.wait_for_timeout(200)
+                    command(shooter, '-reload')
+                    shooter.wait_for_timeout(2500)
+                command(shooter, '+attack')
+                shooter.wait_for_timeout(600)
+                command(shooter, '-attack')
+                shooter.wait_for_timeout(300)
+                sample = state(victim)
+                lifecycle['kill'].append(dict(health=sample.get('health'), pmType=sample.get('pmType'),
+                                              shooterClip=state(shooter).get('clip')))
+                if sample.get('health', 100) <= 0:
+                    died, death_state = True, sample
+            emit('death', dict(died=died, state=death_state))
+        
+            respawned = False
+            respawn_state = None
+            if died:
+                victim.bring_to_front()
+                victim.wait_for_timeout(3000)
+                deadline = time.monotonic() + 25
+                while time.monotonic() < deadline:
+                    command(victim, '+attack')     # DM: fire to respawn after the death delay
+                    victim.wait_for_timeout(300)
+                    command(victim, '-attack')
+                    victim.wait_for_timeout(1200)
+                    sample = state(victim)
+                    lifecycle['respawn'].append(dict(health=sample.get('health'), pmType=sample.get('pmType'),
+                                                     origin=sample.get('origin')))
+                    # Health was <= 0; full health again means a new spawn.
+                    if sample.get('health', 0) >= 100:
+                        respawned, respawn_state = True, sample
+                        break
+            emit('respawn', dict(respawned=respawned, state=respawn_state))
+        
+            # Disconnect the victim; the remaining client must keep receiving
+            # advancing snapshots (the earlier bug hung the server on unlink).
+            command(victim, 'disconnect')
+            victim.wait_for_timeout(500)
+            disconnected = state(victim).get('state') != 8
+            alive = True
+            last = state(shooter)['snapshotTime']
+            for _ in range(6):
+                shooter.wait_for_timeout(1000)
+                now = state(shooter)
+                lifecycle['alive_during_disconnect'].append(now['snapshotTime'])
+                if now['snapshotTime'] <= last:
+                    alive = False
+                last = now['snapshotTime']
+            emit('disconnect', dict(server_alive=alive))
+        
+            reconnected = False
+            command(victim, 'connect ' + server)
+            for attempt in range(40):
+                victim.wait_for_timeout(1000)
+                sample = state(victim)
+                lifecycle['reconnect'].append(sample.get('state'))
+                if sample.get('state') == 8:
+                    reconnected = True
+                    break
+            shooter_after = state(shooter)
+            still_alive_after_reconnect = shooter_after['snapshotTime'] > last
+            emit('reconnect', dict(reconnected=reconnected, shooter=shooter_after))
+        
+            checks = {
+                'two_distinct_clients': all(s.get('state') == 8 and s.get('client', -1) >= 0 for s in duel_before) and duel_before[0]['client'] != duel_before[1]['client'],
+                'both_spawned': all(s.get('state') == 8 and s['health'] > 0 and s['weapon'] > 0 for s in duel_before),
+                'both_move': all(sum((r['after']['origin'][i]-r['before']['origin'][i])**2 for i in range(2)) > 1 and r['after']['snapshotTime'] > r['before']['snapshotTime'] for r in movement_results),
+                'both_fire': all(r['after']['clip'] < r['before']['clip'] for r in fire_results),
+                'damage_to_other_player': duel_after[1]['health'] < duel_before[1]['health'] or any(s.get('health', 100) < duel_before[1]['health'] for s in lifecycle['kill']),
+                'target_died': died,
+                'target_respawned': respawned,
+                'server_alive_after_disconnect': alive,
+                'disconnected': disconnected,
+                'reconnected': reconnected,
+                'server_alive_after_reconnect': still_alive_after_reconnect,
+            }
+            findings = diagnostics.findings()
+            checks.update(
+                performance=observation['performance']['pass'],
+                synchronization=observation['synchronization']['pass'],
+                assets=not findings['assets'] and not findings['network_errors'],
+                runtime=not findings['fatal'] and not findings['page_errors'])
+            emit('checks', checks)
+            (root / 'multiplayer-result.json').write_text(sanitize_test_log(json.dumps(dict(key_mode='none' if no_key else 'installed-key',
+                                                              admission_mode='project-session' if session_mode else 'direct-LAN',
+                                                              checks=checks, diagnostics=dict(observation=observation, findings=findings), movements=movement_results, fire=fire_results, duel=dict(before=duel_before, after=duel_after), lifecycle=lifecycle), indent=2), key), encoding='utf-8')
+            print('Checks', checks, flush=True)
+            for index, page in enumerate(pages):
+                emit('final' + str(index), state(page))
+                page.screenshot(path=str(root / ('player' + str(index + 1) + '-final.png')), timeout=5000)
+                command(page, 'disconnect')
+                page.wait_for_timeout(500)
+        finally:
+            for index, page in enumerate(pages):
+                try:
+                    page.screenshot(path=str(root / ('player%d-last.png' % (index + 1))), timeout=5000)
+                except Exception as exc:
+                    emit('screenshot_unavailable', str(exc))
+            context.close()
+    return 0 if all(checks.values()) else 1
 
-    # ---- Lifecycle: kill, respawn, disconnect, reconnect ------------------
-    # Only normal client commands are sent. Health is read from the client's
-    # snapshot (server authoritative); nothing here sets health directly.
-    victim = pages[1]
-    lifecycle = dict(kill=[], respawn=[], alive_during_disconnect=[], reconnect=[])
-    died = False
-    death_state = None
-    deadline = time.time() + 25
-    while time.time() < deadline and not died:
-        target = state(victim)
-        if target.get('health', 100) <= 0:
-            died, death_state = True, target
-            break
-        shooter.evaluate('p => Module.ccall("Web_TestAimAt", null, ["number","number","number"], [p[0],p[1],p[2]+35])', target['origin'])
-        if state(shooter).get('clip', 1) == 0:
-            command(shooter, '+reload')
-            shooter.wait_for_timeout(200)
-            command(shooter, '-reload')
-            shooter.wait_for_timeout(2500)
-        command(shooter, '+attack')
-        shooter.wait_for_timeout(600)
-        command(shooter, '-attack')
-        shooter.wait_for_timeout(300)
-        sample = state(victim)
-        lifecycle['kill'].append(dict(health=sample.get('health'), pmType=sample.get('pmType'),
-                                      shooterClip=state(shooter).get('clip')))
-        if sample.get('health', 100) <= 0:
-            died, death_state = True, sample
-    emit('death', dict(died=died, state=death_state))
-
-    respawned = False
-    respawn_state = None
-    if died:
-        victim.bring_to_front()
-        victim.wait_for_timeout(3000)
-        deadline = time.time() + 25
-        while time.time() < deadline:
-            command(victim, '+attack')     # DM: fire to respawn after the death delay
-            victim.wait_for_timeout(300)
-            command(victim, '-attack')
-            victim.wait_for_timeout(1200)
-            sample = state(victim)
-            lifecycle['respawn'].append(dict(health=sample.get('health'), pmType=sample.get('pmType'),
-                                             origin=sample.get('origin')))
-            # Health was <= 0; full health again means a new spawn.
-            if sample.get('health', 0) >= 100:
-                respawned, respawn_state = True, sample
-                break
-    emit('respawn', dict(respawned=respawned, state=respawn_state))
-
-    # Disconnect the victim; the remaining client must keep receiving
-    # advancing snapshots (the earlier bug hung the server on unlink).
-    command(victim, 'disconnect')
-    alive = True
-    last = state(shooter)['snapshotTime']
-    for _ in range(6):
-        shooter.wait_for_timeout(1000)
-        now = state(shooter)
-        lifecycle['alive_during_disconnect'].append(now['snapshotTime'])
-        if now['snapshotTime'] <= last:
-            alive = False
-        last = now['snapshotTime']
-    emit('disconnect', dict(server_alive=alive))
-
-    reconnected = False
-    command(victim, 'connect ' + server)
-    for attempt in range(40):
-        victim.wait_for_timeout(1000)
-        sample = state(victim)
-        lifecycle['reconnect'].append(sample.get('state'))
-        if sample.get('state') == 8:
-            reconnected = True
-            break
-    shooter_after = state(shooter)
-    still_alive_after_reconnect = shooter_after['snapshotTime'] > last
-    emit('reconnect', dict(reconnected=reconnected, shooter=shooter_after))
-
-    checks = {
-        'two_distinct_clients': duel_before[0]['client'] != duel_before[1]['client'],
-        'both_spawned': all(s['health'] > 0 and s['weapon'] > 0 for s in duel_before),
-        'both_move': all(sum((r['after']['origin'][i]-r['before']['origin'][i])**2 for i in range(2)) > 1 and r['after']['snapshotTime'] > r['before']['snapshotTime'] for r in movement_results),
-        'both_fire': all(r['after']['clip'] < r['before']['clip'] for r in fire_results),
-        'damage_to_other_player': duel_after[1]['health'] < duel_before[1]['health'],
-        'target_died': died,
-        'target_respawned': respawned,
-        'server_alive_after_disconnect': alive,
-        'reconnected': reconnected,
-        'server_alive_after_reconnect': still_alive_after_reconnect,
-    }
-    emit('checks', checks)
-    (root / 'multiplayer-result.json').write_text(json.dumps(dict(key_mode='none' if no_key else 'installed-key',
-                                                      admission_mode='project-session' if session_mode else 'direct-LAN',
-                                                      checks=checks, movements=movement_results, fire=fire_results, duel=dict(before=duel_before, after=duel_after), lifecycle=lifecycle), indent=2))
-    print('Checks', checks, flush=True)
-    for index, page in enumerate(pages):
-        emit('final' + str(index), state(page))
-        page.screenshot(path=str(root / ('player' + str(index + 1) + '-final.png')))
-        command(page, 'disconnect')
-        page.wait_for_timeout(500)
-    context.close()
-
-if not all(checks.values()):
-    sys.exit(1)
+if __name__ == '__main__':
+    try:
+        sys.exit(run())
+    except Exception as exc:
+        error = sanitize_test_log(type(exc).__name__ + ': ' + str(exc), installed_key_for_redaction)
+        (root / 'worker-error.json').write_text(
+            json.dumps({'status': 'FAIL', 'error': error}, ensure_ascii=False), encoding='utf-8')
+        print('FAIL: test klienta przerwany; szczegóły w worker-error.json', flush=True)
+        sys.exit(1)
