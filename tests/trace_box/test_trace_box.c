@@ -87,6 +87,23 @@ void _start(void)
     float side_mn[3] = {mn[0] + 500, mn[1], mn[2]}, side_mx[3] = {mx[0] + 500, mx[1], mx[2]};
     tb_case(s, e, side_mn, side_mx, 1.0f, 0, "player beside the ray");
 
+    /*
+     * Jules 2026-10-27: an independent early-out check with a world hit
+     * fraction after the victim box (existing fix should already pass).
+     * The same bounding box MUST be skipped if world geometry stops the
+     * bullet before entering it; never infer damage from these tests alone.
+     */
+    {
+        float s2[3] = {0, 0, 0};
+        float e2[3] = {1000, 0, 0};
+        float mn2[3] = {80, -15, -15};
+        float mx2[3] = {90, 15, 15};
+        tb_case(s2, e2, mn2, mx2, 165.0f / 1000.0f, 1,
+                "Jules: entity precedes world hit");
+        tb_case(s2, e2, mn2, mx2, 70.0f / 1000.0f, 0,
+                "Jules: world hit precedes entity");
+    }
+
     int n, judged = 0;
     for (n = 0; n < 200000; n++) {
         float a[3], b[3], lo[3], hi[3], fr = frand(0.05f, 1.0f);
